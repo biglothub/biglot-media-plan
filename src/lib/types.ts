@@ -39,3 +39,13 @@ export interface IdeaBacklogRow {
 	engagement_json: Record<string, unknown> | null;
 	created_at: string;
 }
+
+export interface ProductionCalendarRow {
+	id: string;
+	backlog_id: string;
+	shoot_date: string;
+	status: string;
+	notes: string | null;
+	created_at: string;
+	idea_backlog?: IdeaBacklogRow | null;
+}

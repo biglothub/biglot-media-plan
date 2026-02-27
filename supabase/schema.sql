@@ -49,3 +49,42 @@ create policy "public delete backlog"
 on public.idea_backlog
 for delete
 using (true);
+
+create table if not exists public.production_calendar (
+  id uuid primary key default gen_random_uuid(),
+  backlog_id uuid not null references public.idea_backlog(id) on delete cascade,
+  shoot_date date not null,
+  status text not null default 'planned',
+  notes text,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+create unique index if not exists ux_production_calendar_backlog on public.production_calendar (backlog_id);
+create index if not exists idx_production_calendar_shoot_date on public.production_calendar (shoot_date);
+
+alter table public.production_calendar enable row level security;
+
+drop policy if exists "public read calendar" on public.production_calendar;
+create policy "public read calendar"
+on public.production_calendar
+for select
+using (true);
+
+drop policy if exists "public insert calendar" on public.production_calendar;
+create policy "public insert calendar"
+on public.production_calendar
+for insert
+with check (true);
+
+drop policy if exists "public update calendar" on public.production_calendar;
+create policy "public update calendar"
+on public.production_calendar
+for update
+using (true)
+with check (true);
+
+drop policy if exists "public delete calendar" on public.production_calendar;
+create policy "public delete calendar"
+on public.production_calendar
+for delete
+using (true);

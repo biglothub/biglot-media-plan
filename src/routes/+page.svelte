@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { hasSupabaseConfig, supabase } from "$lib/supabase";
-	import type { EnrichResult, IdeaBacklogRow } from "$lib/types";
+	import type {
+		EnrichResult,
+		IdeaBacklogRow,
+		ProductionCalendarRow,
+	} from "$lib/types";
 
 	const numberFormatter = new Intl.NumberFormat("en-US");
 
@@ -15,6 +19,11 @@
 	let errorMessage = $state("");
 	let draft = $state<EnrichResult | null>(null);
 	let ideas = $state<IdeaBacklogRow[]>([]);
+	let calendarItems = $state<ProductionCalendarRow[]>([]);
+	let loadingCalendar = $state(false);
+	let currentMonthStart = $state(getMonthStartIso(new Date()));
+	let dragHoverDate = $state<string | null>(null);
+	let draggingBacklogId = $state<string | null>(null);
 	let metrics = $state({
 		views: null as number | null,
 		likes: null as number | null,
@@ -63,6 +72,23 @@
 
 		return orderedGroups;
 	});
+	const scheduledBacklogIds = $derived.by(
+		() => new Set(calendarItems.map((item) => item.backlog_id)),
+	);
+	const weekdayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+	const monthLabel = $derived.by(() => formatMonthLabel(currentMonthStart));
+	const monthCells = $derived.by(() => buildMonthCells(currentMonthStart));
+	const calendarByDate = $derived.by(() => {
+		const grouped = new Map<string, ProductionCalendarRow[]>();
+
+		for (const item of calendarItems) {
+			const bucket = grouped.get(item.shoot_date) ?? [];
+			bucket.push(item);
+			grouped.set(item.shoot_date, bucket);
+		}
+
+		return grouped;
+	});
 
 	function clearState() {
 		draft = null;
@@ -78,6 +104,81 @@
 
 	function formatCount(value: number | null): string {
 		return value === null ? "-" : numberFormatter.format(value);
+	}
+
+	function toIsoLocalDate(date: Date): string {
+		const year = date.getFullYear();
+		const month = String(date.getMonth() + 1).padStart(2, "0");
+		const day = String(date.getDate()).padStart(2, "0");
+		return `${year}-${month}-${day}`;
+	}
+
+	function parseIsoDate(isoDate: string): Date {
+		const [year, month, day] = isoDate.split("-").map(Number);
+		return new Date(year, month - 1, day);
+	}
+
+	function addDaysIso(isoDate: string, days: number): string {
+		const target = parseIsoDate(isoDate);
+		target.setDate(target.getDate() + days);
+		return toIsoLocalDate(target);
+	}
+
+	function getMonthStartIso(date: Date): string {
+		return toIsoLocalDate(new Date(date.getFullYear(), date.getMonth(), 1));
+	}
+
+	function addMonthsIso(isoDate: string, months: number): string {
+		const target = parseIsoDate(isoDate);
+		return toIsoLocalDate(new Date(target.getFullYear(), target.getMonth() + months, 1));
+	}
+
+	function formatMonthLabel(monthStartIso: string): string {
+		return parseIsoDate(monthStartIso).toLocaleDateString("en-US", {
+			month: "long",
+			year: "numeric",
+		});
+	}
+
+	function formatCalendarDate(isoDate: string): string {
+		return parseIsoDate(isoDate).toLocaleDateString("en-US", {
+			weekday: "short",
+			month: "short",
+			day: "numeric",
+		});
+	}
+
+	function formatCalendarDayNumber(isoDate: string): string {
+		return String(parseIsoDate(isoDate).getDate());
+	}
+
+	function formatCalendarDayMeta(isoDate: string): string {
+		return parseIsoDate(isoDate).toLocaleDateString("en-US", {
+			month: "short",
+			day: "numeric",
+		});
+	}
+
+	function buildMonthCells(monthStartIso: string): Array<{
+		dateIso: string;
+		inCurrentMonth: boolean;
+	}> {
+		const monthStart = parseIsoDate(monthStartIso);
+		const firstDayOffset = (monthStart.getDay() + 6) % 7;
+		const gridStart = new Date(
+			monthStart.getFullYear(),
+			monthStart.getMonth(),
+			1 - firstDayOffset,
+		);
+
+		return Array.from({ length: 42 }, (_, index) => {
+			const current = new Date(gridStart);
+			current.setDate(gridStart.getDate() + index);
+			return {
+				dateIso: toIsoLocalDate(current),
+				inCurrentMonth: current.getMonth() === monthStart.getMonth(),
+			};
+		});
 	}
 
 	function getTikTokEmbedUrl(videoUrl: string): string | null {
@@ -142,6 +243,41 @@
 		}
 
 		ideas = (data ?? []) as IdeaBacklogRow[];
+	}
+
+	async function loadCalendar() {
+		if (!supabase) return;
+
+		loadingCalendar = true;
+
+		const { data, error } = await supabase
+			.from("production_calendar")
+			.select(
+				"id, backlog_id, shoot_date, status, notes, created_at, idea_backlog(*)",
+			)
+			.order("shoot_date", { ascending: true })
+			.order("created_at", { ascending: true });
+
+		loadingCalendar = false;
+
+		if (error) {
+			errorMessage = `โหลด calendar ไม่ได้: ${error.message}`;
+			return;
+		}
+
+		const normalized = (data ?? []).map((item) => {
+			const row = item as Record<string, unknown>;
+			const linkedIdea = row.idea_backlog;
+
+			return {
+				...row,
+				idea_backlog: Array.isArray(linkedIdea)
+					? (linkedIdea[0] ?? null)
+					: (linkedIdea ?? null),
+			};
+		});
+
+		calendarItems = normalized as ProductionCalendarRow[];
 	}
 
 	async function analyzeLink() {
@@ -263,10 +399,81 @@
 		}
 
 		ideas = ideas.filter((item) => item.id !== idea.id);
+		calendarItems = calendarItems.filter((item) => item.backlog_id !== idea.id);
 		message = "ลบออกจาก backlog แล้ว";
 	}
 
-	onMount(loadIdeas);
+	function shiftMonth(months: number) {
+		currentMonthStart = addMonthsIso(currentMonthStart, months);
+	}
+
+	function handleDragStart(event: DragEvent, backlogId: string) {
+		draggingBacklogId = backlogId;
+		event.dataTransfer?.setData("text/plain", backlogId);
+		if (event.dataTransfer) {
+			event.dataTransfer.effectAllowed = "move";
+		}
+	}
+
+	function handleDragOver(event: DragEvent, dateIso: string) {
+		event.preventDefault();
+		dragHoverDate = dateIso;
+		if (event.dataTransfer) {
+			event.dataTransfer.dropEffect = "move";
+		}
+	}
+
+	async function scheduleIdeaOnDate(backlogId: string, dateIso: string) {
+		if (!supabase) return;
+
+		const { error } = await supabase.from("production_calendar").upsert(
+			{
+				backlog_id: backlogId,
+				shoot_date: dateIso,
+				status: "planned",
+			},
+			{ onConflict: "backlog_id" },
+		);
+
+		if (error) {
+			errorMessage = `วางแผนใน calendar ไม่สำเร็จ: ${error.message}`;
+			return;
+		}
+
+		message = "อัปเดตตารางถ่ายทำแล้ว";
+		await loadCalendar();
+	}
+
+	async function handleDropOnDate(event: DragEvent, dateIso: string) {
+		event.preventDefault();
+		const backlogId =
+			event.dataTransfer?.getData("text/plain") || draggingBacklogId;
+		draggingBacklogId = null;
+		dragHoverDate = null;
+		if (!backlogId) return;
+		await scheduleIdeaOnDate(backlogId, dateIso);
+	}
+
+	async function unscheduleIdea(backlogId: string) {
+		if (!supabase) return;
+
+		const { error } = await supabase
+			.from("production_calendar")
+			.delete()
+			.eq("backlog_id", backlogId);
+
+		if (error) {
+			errorMessage = `ลบออกจาก calendar ไม่สำเร็จ: ${error.message}`;
+			return;
+		}
+
+		message = "นำออกจาก calendar แล้ว";
+		calendarItems = calendarItems.filter((item) => item.backlog_id !== backlogId);
+	}
+
+	onMount(async () => {
+		await Promise.all([loadIdeas(), loadCalendar()]);
+	});
 </script>
 
 <main class="page">
@@ -448,7 +655,11 @@
 										idea.platform === "instagram"
 											? getInstagramEmbedUrl(idea.url)
 											: null}
-									<article class="card">
+									<article
+										class="card"
+										draggable="true"
+										ondragstart={(event) => handleDragStart(event, idea.id)}
+									>
 										{#if tiktokEmbedUrl}
 											<iframe
 												class="card-media tiktok-frame"
@@ -474,11 +685,14 @@
 											alt={idea.title ?? "thumbnail"}
 										/>
 									{/if}
-									<div class="card-body">
-										<span class="platform"
-											>{idea.platform.toUpperCase()}</span
-										>
-										<h3>{idea.title ?? "Untitled idea"}</h3>
+										<div class="card-body">
+											<span class="platform"
+												>{idea.platform.toUpperCase()}</span
+											>
+											{#if scheduledBacklogIds.has(idea.id)}
+												<span class="chip">Scheduled</span>
+											{/if}
+											<h3>{idea.title ?? "Untitled idea"}</h3>
 
 										<div class="stats">
 											<div class="stat-badge">
@@ -525,6 +739,74 @@
 						</div>
 					</section>
 				{/each}
+			</div>
+		{/if}
+	</section>
+
+	<section class="panel">
+		<div class="list-head">
+			<h2>Shoot Calendar</h2>
+			<div class="calendar-controls">
+				<button class="ghost" onclick={() => shiftMonth(-1)}>&larr; Prev</button>
+				<span class="week-range">{monthLabel}</span>
+				<button class="ghost" onclick={() => shiftMonth(1)}>Next &rarr;</button>
+			</div>
+		</div>
+
+		{#if loadingCalendar}
+			<p class="empty text-center">Loading calendar...</p>
+		{:else}
+			<div class="calendar-shell">
+				<div class="calendar-weekdays">
+					{#each weekdayLabels as weekday}
+						<span>{weekday}</span>
+					{/each}
+				{/each}
+
+				<div class="calendar-grid">
+					{#each monthCells as cell}
+						<div
+							class={`calendar-day ${cell.inCurrentMonth ? "" : "outside-month"} ${dragHoverDate === cell.dateIso ? "drop-hover" : ""}`}
+							role="region"
+							aria-label={`Shoot day ${cell.dateIso}`}
+							ondragover={(event) => handleDragOver(event, cell.dateIso)}
+							ondragleave={() => (dragHoverDate = null)}
+							ondrop={(event) => handleDropOnDate(event, cell.dateIso)}
+						>
+							<div class="calendar-day-head">
+								<strong>{formatCalendarDayNumber(cell.dateIso)}</strong>
+								<small>{formatCalendarDayMeta(cell.dateIso)}</small>
+							</div>
+
+							{#if (calendarByDate.get(cell.dateIso) ?? []).length === 0}
+								<p class="drop-hint">Drag idea here</p>
+							{/if}
+
+							{#each calendarByDate.get(cell.dateIso) ?? [] as item}
+								<article
+									class="calendar-item"
+									draggable="true"
+									ondragstart={(event) =>
+										handleDragStart(event, item.backlog_id)}
+								>
+									<span class="platform"
+										>{item.idea_backlog?.platform?.toUpperCase() ??
+											"IDEA"}</span
+									>
+									<p>{item.idea_backlog?.title ?? "Untitled idea"}</p>
+									<div class="calendar-item-actions">
+										<button
+											class="tiny-danger"
+											onclick={() => unscheduleIdea(item.backlog_id)}
+										>
+											Remove
+										</button>
+									</div>
+								</article>
+							{/each}
+						</div>
+					{/each}
+				</div>
 			</div>
 		{/if}
 	</section>
@@ -810,6 +1092,8 @@
 		justify-content: space-between;
 		align-items: center;
 		margin-bottom: 2.5rem;
+		gap: 1rem;
+		flex-wrap: wrap;
 	}
 
 	.list-head h2 {
@@ -851,6 +1135,117 @@
 		border-radius: 1rem;
 		font-size: 0.8rem;
 		font-weight: 700;
+	}
+
+	.chip {
+		display: inline-block;
+		margin-left: 0.4rem;
+		padding: 0.12rem 0.55rem;
+		border-radius: 999px;
+		background: rgba(22, 163, 74, 0.12);
+		color: #166534;
+		font-size: 0.72rem;
+		font-weight: 700;
+	}
+
+	.calendar-controls {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		flex-wrap: wrap;
+	}
+
+	.ghost {
+		border: 1px solid rgba(37, 99, 235, 0.25);
+		background: rgba(37, 99, 235, 0.08);
+		color: #1d4ed8;
+		border-radius: 0.7rem;
+		padding: 0.45rem 0.75rem;
+		font-size: 0.82rem;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.week-range {
+		font-size: 0.9rem;
+		color: #334155;
+		font-weight: 600;
+	}
+
+	.calendar-grid {
+		display: grid;
+		grid-template-columns: repeat(7, minmax(0, 1fr));
+		gap: 0.75rem;
+	}
+
+	.calendar-day {
+		min-height: 180px;
+		border: 1px solid rgba(0, 0, 0, 0.08);
+		background: rgba(255, 255, 255, 0.76);
+		border-radius: 1rem;
+		padding: 0.7rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.55rem;
+	}
+
+	.calendar-day.drop-hover {
+		border-color: rgba(37, 99, 235, 0.5);
+		box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.18);
+	}
+
+	.calendar-day-head {
+		display: grid;
+		gap: 0.15rem;
+	}
+
+	.calendar-day-head strong {
+		font-size: 0.9rem;
+		color: #0f172a;
+	}
+
+	.calendar-day-head small {
+		font-size: 0.72rem;
+		color: #64748b;
+	}
+
+	.drop-hint {
+		font-size: 0.8rem;
+		color: #64748b;
+		margin: 0.25rem 0 0;
+	}
+
+	.calendar-item {
+		border: 1px solid rgba(0, 0, 0, 0.08);
+		background: #fff;
+		border-radius: 0.8rem;
+		padding: 0.55rem;
+		display: grid;
+		gap: 0.35rem;
+		cursor: grab;
+	}
+
+	.calendar-item p {
+		margin: 0;
+		font-size: 0.82rem;
+		color: #0f172a;
+		line-height: 1.3;
+	}
+
+	.calendar-item-actions {
+		display: flex;
+		justify-content: flex-end;
+	}
+
+	.tiny-danger {
+		border: 0;
+		background: rgba(220, 38, 38, 0.12);
+		color: #b91c1c;
+		font-size: 0.72rem;
+		font-weight: 700;
+		border-radius: 0.6rem;
+		padding: 0.3rem 0.45rem;
+		cursor: pointer;
 	}
 
 	.card {
@@ -976,6 +1371,10 @@
 
 		.hero h1 {
 			font-size: 2.8rem;
+		}
+
+		.calendar-grid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 	}
 </style>

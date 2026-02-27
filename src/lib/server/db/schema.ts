@@ -1,5 +1,17 @@
 import { sql } from 'drizzle-orm';
-import { bigint, check, index, jsonb, pgPolicy, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+	bigint,
+	check,
+	date,
+	index,
+	jsonb,
+	pgPolicy,
+	pgTable,
+	text,
+	timestamp,
+	uniqueIndex,
+	uuid
+} from 'drizzle-orm/pg-core';
 
 export const ideaBacklog = pgTable(
 	'idea_backlog',
@@ -48,6 +60,47 @@ export const ideaBacklog = pgTable(
 			withCheck: sql`true`
 		}),
 		pgPolicy('public_delete_backlog', {
+			for: 'delete',
+			to: 'public',
+			using: sql`true`
+		})
+	]
+).enableRLS();
+
+export const productionCalendar = pgTable(
+	'production_calendar',
+	{
+		id: uuid('id').defaultRandom().primaryKey(),
+		backlogId: uuid('backlog_id')
+			.notNull()
+			.references(() => ideaBacklog.id, { onDelete: 'cascade' }),
+		shootDate: date('shoot_date', { mode: 'string' }).notNull(),
+		status: text('status').notNull().default('planned'),
+		notes: text('notes'),
+		createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+			.notNull()
+			.defaultNow()
+	},
+	(table) => [
+		uniqueIndex('ux_production_calendar_backlog').on(table.backlogId),
+		index('idx_production_calendar_shoot_date').on(table.shootDate),
+		pgPolicy('public_read_calendar', {
+			for: 'select',
+			to: 'public',
+			using: sql`true`
+		}),
+		pgPolicy('public_insert_calendar', {
+			for: 'insert',
+			to: 'public',
+			withCheck: sql`true`
+		}),
+		pgPolicy('public_update_calendar', {
+			for: 'update',
+			to: 'public',
+			using: sql`true`,
+			withCheck: sql`true`
+		}),
+		pgPolicy('public_delete_calendar', {
 			for: 'delete',
 			to: 'public',
 			using: sql`true`

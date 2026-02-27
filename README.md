@@ -7,6 +7,7 @@ Workflow:
 2. กด `Analyze Link`
 3. ตรวจ/แก้ค่า engagement
 4. กด `Save To Backlog`
+5. ลากไอเดียจาก backlog ไปวางบน `Shoot Calendar`
 
 ## Tech Stack
 - SvelteKit
@@ -80,3 +81,4 @@ npm run dev
 - การดึง engagement จากบางแพลตฟอร์มอาจถูกจำกัด (private post, geo-block, anti-bot)
 - endpoint ตอนนี้เป็น `best-effort` จาก JSON-LD/meta tags/regex fallback
 - ถ้าต้องการความแม่นยำระดับ production ควรเชื่อม official API ของแต่ละแพลตฟอร์ม
+- ถ้าเพิ่งอัปเดตฟีเจอร์ calendar ให้รัน `npm run db:migrate` เพื่อสร้างตาราง `production_calendar`
