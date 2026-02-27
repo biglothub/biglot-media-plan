@@ -88,3 +88,50 @@ create policy "public delete calendar"
 on public.production_calendar
 for delete
 using (true);
+
+create table if not exists public.produced_videos (
+  id uuid primary key default gen_random_uuid(),
+  calendar_id uuid not null references public.production_calendar(id) on delete cascade,
+  url text not null,
+  platform text not null check (platform in ('youtube', 'facebook', 'instagram', 'tiktok')),
+  title text,
+  thumbnail_url text,
+  published_at timestamptz,
+  view_count bigint,
+  like_count bigint,
+  comment_count bigint,
+  share_count bigint,
+  save_count bigint,
+  notes text,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+create unique index if not exists ux_produced_videos_calendar on public.produced_videos (calendar_id);
+create index if not exists idx_produced_videos_platform on public.produced_videos (platform);
+
+alter table public.produced_videos enable row level security;
+
+drop policy if exists "public read produced videos" on public.produced_videos;
+create policy "public read produced videos"
+on public.produced_videos
+for select
+using (true);
+
+drop policy if exists "public insert produced videos" on public.produced_videos;
+create policy "public insert produced videos"
+on public.produced_videos
+for insert
+with check (true);
+
+drop policy if exists "public update produced videos" on public.produced_videos;
+create policy "public update produced videos"
+on public.produced_videos
+for update
+using (true)
+with check (true);
+
+drop policy if exists "public delete produced videos" on public.produced_videos;
+create policy "public delete produced videos"
+on public.produced_videos
+for delete
+using (true);

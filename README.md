@@ -8,6 +8,7 @@ Workflow:
 3. ตรวจ/แก้ค่า engagement
 4. กด `Save To Backlog`
 5. ลากไอเดียจาก backlog ไปวางบน `Shoot Calendar`
+6. เลือกไอเดียใน calendar แล้วเพิ่ม `Produced Video` เพื่อเทียบ KPI
 
 ## Tech Stack
 - SvelteKit
@@ -82,3 +83,4 @@ npm run dev
 - endpoint ตอนนี้เป็น `best-effort` จาก JSON-LD/meta tags/regex fallback
 - ถ้าต้องการความแม่นยำระดับ production ควรเชื่อม official API ของแต่ละแพลตฟอร์ม
 - ถ้าเพิ่งอัปเดตฟีเจอร์ calendar ให้รัน `npm run db:migrate` เพื่อสร้างตาราง `production_calendar`
+- ถ้าเพิ่งอัปเดตฟีเจอร์ KPI compare ให้รัน `npm run db:migrate` เพื่อสร้างตาราง `produced_videos`

@@ -5,6 +5,8 @@
 		EnrichResult,
 		IdeaBacklogRow,
 		ProductionCalendarRow,
+		ProducedVideoRow,
+		SupportedPlatform,
 	} from "$lib/types";
 
 	const numberFormatter = new Intl.NumberFormat("en-US");
@@ -20,11 +22,26 @@
 	let draft = $state<EnrichResult | null>(null);
 	let ideas = $state<IdeaBacklogRow[]>([]);
 	let calendarItems = $state<ProductionCalendarRow[]>([]);
+	let producedVideos = $state<ProducedVideoRow[]>([]);
 	let loadingCalendar = $state(false);
+	let loadingProduced = $state(false);
 	let currentMonthStart = $state(getMonthStartIso(new Date()));
 	let dragHoverDate = $state<string | null>(null);
 	let draggingBacklogId = $state<string | null>(null);
+	let selectedCalendarId = $state<string | null>(null);
+	let producedLinkInput = $state("");
+	let producedNotes = $state("");
+	let producedDraft = $state<EnrichResult | null>(null);
+	let analyzingProduced = $state(false);
+	let savingProduced = $state(false);
 	let metrics = $state({
+		views: null as number | null,
+		likes: null as number | null,
+		comments: null as number | null,
+		shares: null as number | null,
+		saves: null as number | null,
+	});
+	let producedMetrics = $state({
 		views: null as number | null,
 		likes: null as number | null,
 		comments: null as number | null,
@@ -78,6 +95,21 @@
 	const weekdayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 	const monthLabel = $derived.by(() => formatMonthLabel(currentMonthStart));
 	const monthCells = $derived.by(() => buildMonthCells(currentMonthStart));
+	const sortedCalendarIdeas = $derived.by(() =>
+		[...calendarItems].sort((a, b) => a.shoot_date.localeCompare(b.shoot_date)),
+	);
+	const selectedCalendarItem = $derived.by(
+		() =>
+			sortedCalendarIdeas.find((item) => item.id === selectedCalendarId) ?? null,
+	);
+	const producedByCalendarId = $derived.by(() => {
+		const map = new Map<string, ProducedVideoRow>();
+		for (const video of producedVideos) map.set(video.calendar_id, video);
+		return map;
+	});
+	const selectedProducedVideo = $derived.by(() =>
+		selectedCalendarId ? producedByCalendarId.get(selectedCalendarId) ?? null : null,
+	);
 	const calendarByDate = $derived.by(() => {
 		const grouped = new Map<string, ProductionCalendarRow[]>();
 
@@ -88,6 +120,89 @@
 		}
 
 		return grouped;
+	});
+	const kpiRows = $derived.by(() => {
+		const original = selectedCalendarItem?.idea_backlog;
+		const produced = {
+			view_count: normalizeMetricValue(producedMetrics.views),
+			like_count: normalizeMetricValue(producedMetrics.likes),
+			comment_count: normalizeMetricValue(producedMetrics.comments),
+			share_count: normalizeMetricValue(producedMetrics.shares),
+			save_count: normalizeMetricValue(producedMetrics.saves),
+		};
+		const specs = [
+			{ key: "views", label: "Views" },
+			{ key: "likes", label: "Likes" },
+			{ key: "comments", label: "Comments" },
+			{ key: "shares", label: "Shares" },
+			{ key: "saves", label: "Saves" },
+		] as const;
+		const metricColumnByKey = {
+			views: "view_count",
+			likes: "like_count",
+			comments: "comment_count",
+			shares: "share_count",
+			saves: "save_count",
+		} as const;
+
+		return specs.map(({ key, label }) => {
+			const metricColumn = metricColumnByKey[key];
+			const originalValue = original?.[metricColumn] as number | null | undefined;
+			const producedValue = produced[metricColumn];
+
+			if (
+				originalValue === null ||
+				originalValue === undefined ||
+				producedValue === null ||
+				producedValue === undefined
+			) {
+					return {
+						label,
+						original: originalValue ?? null,
+						produced: producedValue ?? null,
+						delta: null as number | null,
+						pct: null as number | null,
+						status: "na" as KpiStatus,
+					};
+				}
+
+			const delta = producedValue - originalValue;
+			const pct =
+				originalValue === 0
+					? producedValue === 0
+						? 0
+						: null
+					: (delta / originalValue) * 100;
+			const status: KpiStatus = delta > 0 ? "up" : delta < 0 ? "down" : "same";
+
+			return {
+				label,
+				original: originalValue,
+				produced: producedValue,
+				delta,
+				pct,
+				status,
+			};
+		});
+	});
+	const effectiveProducedPreview = $derived.by(() => {
+		if (producedDraft) {
+			return {
+				platform: producedDraft.platform,
+				url: producedDraft.url,
+				title: producedDraft.title,
+				thumbnailUrl: producedDraft.thumbnailUrl,
+			};
+		}
+
+		if (!selectedProducedVideo) return null;
+
+		return {
+			platform: selectedProducedVideo.platform,
+			url: selectedProducedVideo.url,
+			title: selectedProducedVideo.title,
+			thumbnailUrl: selectedProducedVideo.thumbnail_url,
+		};
 	});
 
 	function clearState() {
@@ -116,6 +231,10 @@
 	function parseIsoDate(isoDate: string): Date {
 		const [year, month, day] = isoDate.split("-").map(Number);
 		return new Date(year, month - 1, day);
+	}
+
+	function normalizeMetricValue(value: unknown): number | null {
+		return typeof value === "number" && Number.isFinite(value) ? value : null;
 	}
 
 	function addDaysIso(isoDate: string, days: number): string {
@@ -158,6 +277,27 @@
 			day: "numeric",
 		});
 	}
+
+	function metricLabel(status: KpiStatus): string {
+		if (status === "up") return "Better";
+		if (status === "down") return "Lower";
+		if (status === "same") return "Same";
+		return "N/A";
+	}
+
+	function formatDelta(value: number | null): string {
+		if (value === null) return "-";
+		const sign = value > 0 ? "+" : "";
+		return `${sign}${numberFormatter.format(value)}`;
+	}
+
+	function formatPercent(value: number | null): string {
+		if (value === null) return "-";
+		const sign = value > 0 ? "+" : "";
+		return `${sign}${value.toFixed(1)}%`;
+	}
+
+	type KpiStatus = "up" | "down" | "same" | "na";
 
 	function buildMonthCells(monthStartIso: string): Array<{
 		dateIso: string;
@@ -215,6 +355,19 @@
 		}
 	}
 
+	function getPlatformFromUrl(url: string): SupportedPlatform | null {
+		try {
+			const host = new URL(url).hostname.toLowerCase();
+			if (host.includes("youtu.be") || host.includes("youtube.com")) return "youtube";
+			if (host.includes("facebook.com") || host.includes("fb.watch")) return "facebook";
+			if (host.includes("instagram.com")) return "instagram";
+			if (host.includes("tiktok.com")) return "tiktok";
+			return null;
+		} catch {
+			return null;
+		}
+	}
+
 	const draftTikTokEmbedUrl = $derived(
 		draft && draft.platform === "tiktok" ? getTikTokEmbedUrl(draft.url) : null,
 	);
@@ -223,6 +376,29 @@
 			? getInstagramEmbedUrl(draft.url)
 			: null,
 	);
+	const producedDraftTikTokEmbedUrl = $derived(
+		effectiveProducedPreview && effectiveProducedPreview.platform === "tiktok"
+			? getTikTokEmbedUrl(effectiveProducedPreview.url)
+			: null,
+	);
+	const producedDraftInstagramEmbedUrl = $derived(
+		effectiveProducedPreview && effectiveProducedPreview.platform === "instagram"
+			? getInstagramEmbedUrl(effectiveProducedPreview.url)
+			: null,
+	);
+
+	function resetProducedForm() {
+		producedLinkInput = "";
+		producedNotes = "";
+		producedDraft = null;
+		producedMetrics = {
+			views: null,
+			likes: null,
+			comments: null,
+			shares: null,
+			saves: null,
+		};
+	}
 
 	async function loadIdeas() {
 		if (!supabase) return;
@@ -278,6 +454,167 @@
 		});
 
 		calendarItems = normalized as ProductionCalendarRow[];
+		if (
+			selectedCalendarId &&
+			!calendarItems.some((item) => item.id === selectedCalendarId)
+		) {
+			selectedCalendarId = null;
+			hydrateProducedForm(null);
+		}
+	}
+
+	async function loadProducedVideos() {
+		if (!supabase) return;
+
+		loadingProduced = true;
+		const { data, error } = await supabase
+			.from("produced_videos")
+			.select("*")
+			.order("created_at", { ascending: false });
+		loadingProduced = false;
+
+		if (error) {
+			errorMessage = `โหลด produced videos ไม่ได้: ${error.message}`;
+			return;
+		}
+
+		producedVideos = (data ?? []) as ProducedVideoRow[];
+		if (selectedCalendarId) {
+			hydrateProducedForm(selectedCalendarId);
+		}
+	}
+
+	function hydrateProducedForm(calendarId: string | null) {
+		if (!calendarId) {
+			resetProducedForm();
+			return;
+		}
+
+		const existing = producedVideos.find((video) => video.calendar_id === calendarId);
+		if (!existing) {
+			resetProducedForm();
+			return;
+		}
+
+		producedLinkInput = existing.url;
+		producedNotes = existing.notes ?? "";
+		producedDraft = null;
+		producedMetrics = {
+			views: existing.view_count,
+			likes: existing.like_count,
+			comments: existing.comment_count,
+			shares: existing.share_count,
+			saves: existing.save_count,
+		};
+	}
+
+	function selectCalendarItem(calendarId: string) {
+		selectedCalendarId = calendarId;
+		hydrateProducedForm(calendarId);
+	}
+
+	async function analyzeProducedLink() {
+		errorMessage = "";
+		message = "";
+
+		if (!selectedCalendarItem) {
+			errorMessage = "เลือกไอเดียจากฝั่งซ้ายก่อน";
+			return;
+		}
+
+		if (!producedLinkInput.trim()) {
+			errorMessage = "กรุณาวางลิงก์วิดีโอที่ทำจริง";
+			return;
+		}
+
+		analyzingProduced = true;
+		try {
+			const response = await fetch(
+				`/api/enrich?url=${encodeURIComponent(producedLinkInput.trim())}`,
+			);
+			const body = await response.json();
+
+			if (!response.ok) {
+				errorMessage = body.error ?? "อ่านข้อมูลวิดีโอที่ทำจริงไม่สำเร็จ";
+				return;
+			}
+
+			producedDraft = body as EnrichResult;
+			producedLinkInput = producedDraft.url;
+			producedMetrics = {
+				views: producedDraft.metrics.views,
+				likes: producedDraft.metrics.likes,
+				comments: producedDraft.metrics.comments,
+				shares: producedDraft.metrics.shares,
+				saves: producedDraft.metrics.saves,
+			};
+			message = "ดึงข้อมูลวิดีโอที่ทำจริงสำเร็จแล้ว";
+		} catch (error) {
+			errorMessage =
+				error instanceof Error
+					? error.message
+					: "เกิดข้อผิดพลาดระหว่าง analyze วิดีโอที่ทำจริง";
+		} finally {
+			analyzingProduced = false;
+		}
+	}
+
+	async function saveProducedVideo() {
+		if (!supabase) {
+			errorMessage = "ยังไม่ได้ตั้งค่า Supabase";
+			return;
+		}
+
+		if (!selectedCalendarItem) {
+			errorMessage = "เลือกไอเดียจากฝั่งซ้ายก่อน";
+			return;
+		}
+
+		const finalUrl = (producedDraft?.url ?? producedLinkInput).trim();
+		if (!finalUrl) {
+			errorMessage = "กรุณาใส่ลิงก์วิดีโอที่ทำจริง";
+			return;
+		}
+
+		savingProduced = true;
+		errorMessage = "";
+		message = "";
+
+		const sourcePlatform =
+			producedDraft?.platform ??
+			getPlatformFromUrl(finalUrl) ??
+			selectedCalendarItem.idea_backlog?.platform ??
+			"youtube";
+
+		const payload = {
+			calendar_id: selectedCalendarItem.id,
+			url: finalUrl,
+			platform: sourcePlatform,
+			title: producedDraft?.title ?? null,
+			thumbnail_url: producedDraft?.thumbnailUrl ?? null,
+			published_at: producedDraft?.publishedAt ?? null,
+			view_count: producedMetrics.views,
+			like_count: producedMetrics.likes,
+			comment_count: producedMetrics.comments,
+			share_count: producedMetrics.shares,
+			save_count: producedMetrics.saves,
+			notes: producedNotes.trim() || null,
+		};
+
+		const { error } = await supabase
+			.from("produced_videos")
+			.upsert(payload, { onConflict: "calendar_id" });
+
+		savingProduced = false;
+
+		if (error) {
+			errorMessage = `บันทึก produced video ไม่สำเร็จ: ${error.message}`;
+			return;
+		}
+
+		message = "บันทึกวิดีโอที่ทำจริงแล้ว";
+		await loadProducedVideos();
+		hydrateProducedForm(selectedCalendarItem.id);
 	}
 
 	async function analyzeLink() {
@@ -399,7 +736,17 @@
 		}
 
 		ideas = ideas.filter((item) => item.id !== idea.id);
+		const removedCalendarIds = calendarItems
+			.filter((item) => item.backlog_id === idea.id)
+			.map((item) => item.id);
 		calendarItems = calendarItems.filter((item) => item.backlog_id !== idea.id);
+		producedVideos = producedVideos.filter(
+			(video) => !removedCalendarIds.includes(video.calendar_id),
+		);
+		if (selectedCalendarId && removedCalendarIds.includes(selectedCalendarId)) {
+			selectedCalendarId = null;
+			hydrateProducedForm(null);
+		}
 		message = "ลบออกจาก backlog แล้ว";
 	}
 
@@ -442,6 +789,10 @@
 
 		message = "อัปเดตตารางถ่ายทำแล้ว";
 		await loadCalendar();
+		if (!selectedCalendarId) {
+			const matched = calendarItems.find((item) => item.backlog_id === backlogId);
+			if (matched) selectCalendarItem(matched.id);
+		}
 	}
 
 	async function handleDropOnDate(event: DragEvent, dateIso: string) {
@@ -456,6 +807,8 @@
 
 	async function unscheduleIdea(backlogId: string) {
 		if (!supabase) return;
+		const removedCalendarId =
+			calendarItems.find((item) => item.backlog_id === backlogId)?.id ?? null;
 
 		const { error } = await supabase
 			.from("production_calendar")
@@ -469,10 +822,22 @@
 
 		message = "นำออกจาก calendar แล้ว";
 		calendarItems = calendarItems.filter((item) => item.backlog_id !== backlogId);
+		if (removedCalendarId) {
+			producedVideos = producedVideos.filter(
+				(video) => video.calendar_id !== removedCalendarId,
+			);
+			if (selectedCalendarId === removedCalendarId) {
+				selectedCalendarId = null;
+				hydrateProducedForm(null);
+			}
+		}
 	}
 
 	onMount(async () => {
-		await Promise.all([loadIdeas(), loadCalendar()]);
+		await Promise.all([loadIdeas(), loadCalendar(), loadProducedVideos()]);
+		if (!selectedCalendarId && calendarItems.length > 0) {
+			selectCalendarItem(calendarItems[0].id);
+		}
 	});
 </script>
 
@@ -809,6 +1174,182 @@
 				</div>
 			</div>
 		{/if}
+	</section>
+
+	<section class="panel">
+		<div class="list-head">
+			<h2>KPI Compare</h2>
+		</div>
+		<div class="kpi-layout">
+			<div class="kpi-left">
+				<h3>Calendar Ideas</h3>
+				{#if loadingProduced}
+					<p class="drop-hint">Loading produced videos...</p>
+				{/if}
+				{#if sortedCalendarIdeas.length === 0}
+					<p class="empty">ยังไม่มีไอเดียใน calendar</p>
+				{:else}
+					<div class="kpi-idea-list">
+						{#each sortedCalendarIdeas as item}
+							<button
+								class={`kpi-idea-btn ${selectedCalendarId === item.id ? "active" : ""}`}
+								onclick={() => selectCalendarItem(item.id)}
+							>
+								<div>
+									<strong>{item.idea_backlog?.title ?? "Untitled idea"}</strong>
+									<p>{formatCalendarDate(item.shoot_date)}</p>
+								</div>
+								{#if producedByCalendarId.has(item.id)}
+									<span class="chip">Compared</span>
+								{/if}
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
+
+			<div class="kpi-right">
+				{#if !selectedCalendarItem}
+					<p class="empty">เลือกไอเดียจากฝั่งซ้ายเพื่อเริ่มเทียบ KPI</p>
+				{:else}
+					<div class="kpi-source">
+						<p class="kicker">Original Idea</p>
+						<h3>{selectedCalendarItem.idea_backlog?.title ?? "Untitled idea"}</h3>
+						<p class="meta">{formatCalendarDate(selectedCalendarItem.shoot_date)}</p>
+					</div>
+
+					<div class="row">
+						<label for="produced-link">Produced Video Link</label>
+						<input
+							id="produced-link"
+							bind:value={producedLinkInput}
+							placeholder="https://www.youtube.com/watch?v=..."
+						/>
+					</div>
+					<div class="kpi-actions">
+						<button
+							class="ghost"
+							onclick={analyzeProducedLink}
+							disabled={analyzingProduced || !selectedCalendarItem}
+						>
+							{analyzingProduced ? "Analyzing..." : "Analyze Produced Video"}
+						</button>
+						<button
+							class="primary"
+							onclick={saveProducedVideo}
+							disabled={savingProduced || !selectedCalendarItem}
+						>
+							{savingProduced ? "Saving..." : "Save Produced KPI"}
+						</button>
+					</div>
+
+						{#if effectiveProducedPreview}
+							<div class="preview mini-preview">
+								{#if producedDraftTikTokEmbedUrl}
+									<iframe
+									class="preview-media tiktok-frame"
+									src={producedDraftTikTokEmbedUrl}
+									title="Produced TikTok Preview"
+									loading="lazy"
+									allow="encrypted-media; picture-in-picture"
+									allowfullscreen
+								></iframe>
+							{:else if producedDraftInstagramEmbedUrl}
+								<iframe
+									class="preview-media instagram-frame"
+									src={producedDraftInstagramEmbedUrl}
+									title="Produced Instagram Preview"
+									loading="lazy"
+									allow="encrypted-media; picture-in-picture"
+									allowfullscreen
+								></iframe>
+								{:else if effectiveProducedPreview.thumbnailUrl}
+									<img
+										class="preview-media"
+										src={effectiveProducedPreview.thumbnailUrl}
+										alt={effectiveProducedPreview.title ?? "thumbnail"}
+									/>
+								{/if}
+								<div class="preview-content">
+									<span class="platform"
+										>{effectiveProducedPreview.platform.toUpperCase()}</span
+									>
+									<h3>{effectiveProducedPreview.title ?? "Untitled produced video"}</h3>
+								</div>
+							</div>
+						{/if}
+
+					<div class="metrics">
+						<div class="metric-item">
+							<label for="p-views">Views</label>
+							<input id="p-views" type="number" min="0" bind:value={producedMetrics.views} />
+						</div>
+						<div class="metric-item">
+							<label for="p-likes">Likes</label>
+							<input id="p-likes" type="number" min="0" bind:value={producedMetrics.likes} />
+						</div>
+						<div class="metric-item">
+							<label for="p-comments">Comments</label>
+							<input
+								id="p-comments"
+								type="number"
+								min="0"
+								bind:value={producedMetrics.comments}
+							/>
+						</div>
+						<div class="metric-item">
+							<label for="p-shares">Shares</label>
+							<input id="p-shares" type="number" min="0" bind:value={producedMetrics.shares} />
+						</div>
+						<div class="metric-item">
+							<label for="p-saves">Saves</label>
+							<input id="p-saves" type="number" min="0" bind:value={producedMetrics.saves} />
+						</div>
+					</div>
+
+					<div class="row">
+						<label for="produced-notes">Produced Notes</label>
+						<textarea
+							id="produced-notes"
+							bind:value={producedNotes}
+							rows={3}
+							placeholder="ผลลัพธ์ที่ต่างจากต้นฉบับ เช่น hook ที่ปรับ, ปัญหาหน้างาน..."
+						></textarea>
+					</div>
+
+					<div class="kpi-table-wrap">
+						<table class="kpi-table">
+							<thead>
+								<tr>
+									<th>Metric</th>
+									<th>Original</th>
+									<th>Produced</th>
+									<th>Delta</th>
+									<th>%</th>
+									<th>Status</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each kpiRows as row}
+									<tr>
+										<td>{row.label}</td>
+										<td>{formatCount(row.original)}</td>
+										<td>{formatCount(row.produced)}</td>
+										<td>{formatDelta(row.delta)}</td>
+										<td>{formatPercent(row.pct)}</td>
+										<td>
+											<span class={`kpi-status ${row.status}`}>
+												{metricLabel(row.status)}
+											</span>
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+			</div>
+		</div>
 	</section>
 </main>
 
@@ -1278,6 +1819,148 @@
 		cursor: pointer;
 	}
 
+	.kpi-layout {
+		display: grid;
+		grid-template-columns: 340px 1fr;
+		gap: 1rem;
+	}
+
+	.kpi-left,
+	.kpi-right {
+		border: 1px solid rgba(0, 0, 0, 0.08);
+		border-radius: 1rem;
+		background: rgba(255, 255, 255, 0.78);
+		padding: 0.9rem;
+	}
+
+	.kpi-left h3,
+	.kpi-right h3 {
+		margin: 0 0 0.7rem;
+		font-size: 1.05rem;
+	}
+
+	.kpi-idea-list {
+		display: grid;
+		gap: 0.55rem;
+		max-height: 520px;
+		overflow: auto;
+	}
+
+	.kpi-idea-btn {
+		text-align: left;
+		border: 1px solid rgba(0, 0, 0, 0.08);
+		border-radius: 0.75rem;
+		background: #fff;
+		padding: 0.7rem;
+		cursor: pointer;
+		display: flex;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+
+	.kpi-idea-btn strong {
+		display: block;
+		font-size: 0.88rem;
+		color: #0f172a;
+	}
+
+	.kpi-idea-btn p {
+		margin: 0.2rem 0 0;
+		font-size: 0.76rem;
+		color: #64748b;
+	}
+
+	.kpi-idea-btn.active {
+		border-color: rgba(37, 99, 235, 0.45);
+		box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.25);
+	}
+
+	.kpi-source {
+		margin-bottom: 0.65rem;
+	}
+
+	.kpi-source .kicker {
+		color: #2563eb;
+		letter-spacing: 0.16em;
+		font-size: 0.7rem;
+	}
+
+	.kpi-source h3 {
+		margin: 0.2rem 0 0.35rem;
+		font-size: 1.05rem;
+	}
+
+	.kpi-actions {
+		display: flex;
+		gap: 0.6rem;
+		margin-bottom: 0.8rem;
+	}
+
+	.kpi-actions .primary {
+		width: auto;
+	}
+
+	.mini-preview {
+		margin-top: 0.2rem;
+		grid-template-columns: 200px 1fr;
+		gap: 1rem;
+	}
+
+	.kpi-table-wrap {
+		overflow-x: auto;
+	}
+
+	.kpi-table {
+		width: 100%;
+		min-width: 540px;
+		border-collapse: collapse;
+		font-size: 0.84rem;
+	}
+
+	.kpi-table th,
+	.kpi-table td {
+		border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+		padding: 0.55rem 0.45rem;
+		text-align: left;
+		white-space: nowrap;
+	}
+
+	.kpi-table th {
+		color: #64748b;
+		font-weight: 700;
+		font-size: 0.76rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.kpi-status {
+		display: inline-block;
+		border-radius: 999px;
+		padding: 0.16rem 0.56rem;
+		font-size: 0.72rem;
+		font-weight: 700;
+	}
+
+	.kpi-status.up {
+		background: rgba(22, 163, 74, 0.12);
+		color: #166534;
+	}
+
+	.kpi-status.down {
+		background: rgba(220, 38, 38, 0.12);
+		color: #b91c1c;
+	}
+
+	.kpi-status.same {
+		background: rgba(2, 132, 199, 0.12);
+		color: #0c4a6e;
+	}
+
+	.kpi-status.na {
+		background: rgba(100, 116, 139, 0.14);
+		color: #475569;
+	}
+
 	.card {
 		background: #fff;
 		border: 1px solid rgba(0, 0, 0, 0.06);
@@ -1401,6 +2084,14 @@
 
 		.hero h1 {
 			font-size: 2.8rem;
+		}
+
+		.kpi-layout {
+			grid-template-columns: 1fr;
+		}
+
+		.mini-preview {
+			grid-template-columns: 1fr;
 		}
 	}
 </style>

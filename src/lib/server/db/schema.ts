@@ -107,3 +107,56 @@ export const productionCalendar = pgTable(
 		})
 	]
 ).enableRLS();
+
+export const producedVideos = pgTable(
+	'produced_videos',
+	{
+		id: uuid('id').defaultRandom().primaryKey(),
+		calendarId: uuid('calendar_id')
+			.notNull()
+			.references(() => productionCalendar.id, { onDelete: 'cascade' }),
+		url: text('url').notNull(),
+		platform: text('platform').notNull().$type<'youtube' | 'facebook' | 'instagram' | 'tiktok'>(),
+		title: text('title'),
+		thumbnailUrl: text('thumbnail_url'),
+		publishedAt: timestamp('published_at', { withTimezone: true, mode: 'string' }),
+		viewCount: bigint('view_count', { mode: 'number' }),
+		likeCount: bigint('like_count', { mode: 'number' }),
+		commentCount: bigint('comment_count', { mode: 'number' }),
+		shareCount: bigint('share_count', { mode: 'number' }),
+		saveCount: bigint('save_count', { mode: 'number' }),
+		notes: text('notes'),
+		createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+			.notNull()
+			.defaultNow()
+	},
+	(table) => [
+		uniqueIndex('ux_produced_videos_calendar').on(table.calendarId),
+		index('idx_produced_videos_platform').on(table.platform),
+		check(
+			'produced_videos_platform_check',
+			sql`${table.platform} in ('youtube', 'facebook', 'instagram', 'tiktok')`
+		),
+		pgPolicy('public_read_produced_videos', {
+			for: 'select',
+			to: 'public',
+			using: sql`true`
+		}),
+		pgPolicy('public_insert_produced_videos', {
+			for: 'insert',
+			to: 'public',
+			withCheck: sql`true`
+		}),
+		pgPolicy('public_update_produced_videos', {
+			for: 'update',
+			to: 'public',
+			using: sql`true`,
+			withCheck: sql`true`
+		}),
+		pgPolicy('public_delete_produced_videos', {
+			for: 'delete',
+			to: 'public',
+			using: sql`true`
+		})
+	]
+).enableRLS();
