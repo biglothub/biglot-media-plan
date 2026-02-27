@@ -15,6 +15,13 @@
       "when": 1772172167911,
       "tag": "0001_fair_carlie_cooper",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1772173439358,
+      "tag": "0002_far_sharon_carter",
+      "breakpoints": true
     }
   ]
 }

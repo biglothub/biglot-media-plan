@@ -10,6 +10,7 @@
 	let loadingIdeas = $state(false);
 	let enriching = $state(false);
 	let saving = $state(false);
+	let deletingId = $state<string | null>(null);
 	let message = $state("");
 	let errorMessage = $state("");
 	let draft = $state<EnrichResult | null>(null);
@@ -78,6 +79,49 @@
 	function formatCount(value: number | null): string {
 		return value === null ? "-" : numberFormatter.format(value);
 	}
+
+	function getTikTokEmbedUrl(videoUrl: string): string | null {
+		try {
+			const parsed = new URL(videoUrl);
+			const hostname = parsed.hostname.toLowerCase();
+			if (!hostname.includes("tiktok.com")) return null;
+
+			const videoId =
+				parsed.pathname.match(/\/video\/(\d+)/)?.[1] ??
+				parsed.pathname.match(/\/v\/(\d+)/)?.[1] ??
+				null;
+
+			return videoId ? `https://www.tiktok.com/embed/v2/${videoId}` : null;
+		} catch {
+			return null;
+		}
+	}
+
+	function getInstagramEmbedUrl(videoUrl: string): string | null {
+		try {
+			const parsed = new URL(videoUrl);
+			const hostname = parsed.hostname.toLowerCase();
+			if (!hostname.includes("instagram.com")) return null;
+
+			const match = parsed.pathname.match(/\/(p|reel|tv)\/([^/?#]+)/);
+			if (!match) return null;
+
+			const type = match[1];
+			const shortcode = match[2];
+			return `https://www.instagram.com/${type}/${shortcode}/embed/captioned`;
+		} catch {
+			return null;
+		}
+	}
+
+	const draftTikTokEmbedUrl = $derived(
+		draft && draft.platform === "tiktok" ? getTikTokEmbedUrl(draft.url) : null,
+	);
+	const draftInstagramEmbedUrl = $derived(
+		draft && draft.platform === "instagram"
+			? getInstagramEmbedUrl(draft.url)
+			: null,
+	);
 
 	async function loadIdeas() {
 		if (!supabase) return;
@@ -191,6 +235,37 @@
 		await loadIdeas();
 	}
 
+	async function deleteIdea(idea: IdeaBacklogRow) {
+		if (!supabase) {
+			errorMessage = "ยังไม่ได้ตั้งค่า Supabase";
+			return;
+		}
+
+		const confirmed = window.confirm(
+			`ลบ backlog นี้ใช่ไหม?\n${idea.title ?? idea.url}`,
+		);
+		if (!confirmed) return;
+
+		deletingId = idea.id;
+		errorMessage = "";
+		message = "";
+
+		const { error } = await supabase
+			.from("idea_backlog")
+			.delete()
+			.eq("id", idea.id);
+
+		deletingId = null;
+
+		if (error) {
+			errorMessage = `ลบไม่สำเร็จ: ${error.message}`;
+			return;
+		}
+
+		ideas = ideas.filter((item) => item.id !== idea.id);
+		message = "ลบออกจาก backlog แล้ว";
+	}
+
 	onMount(loadIdeas);
 </script>
 
@@ -236,8 +311,27 @@
 	{#if draft}
 		<section class="panel">
 			<div class="preview">
-				{#if draft.thumbnailUrl}
+				{#if draftTikTokEmbedUrl}
+					<iframe
+						class="preview-media tiktok-frame"
+						src={draftTikTokEmbedUrl}
+						title="TikTok Preview"
+						loading="lazy"
+						allow="encrypted-media; picture-in-picture"
+						allowfullscreen
+					></iframe>
+				{:else if draftInstagramEmbedUrl}
+					<iframe
+						class="preview-media instagram-frame"
+						src={draftInstagramEmbedUrl}
+						title="Instagram Preview"
+						loading="lazy"
+						allow="encrypted-media; picture-in-picture"
+						allowfullscreen
+					></iframe>
+				{:else if draft.thumbnailUrl}
 					<img
+						class="preview-media"
 						src={draft.thumbnailUrl}
 						alt={draft.title ?? "thumbnail"}
 					/>
@@ -344,12 +438,39 @@
 							<span class="group-count">{group.items.length}</span>
 						</div>
 
-						<div class="grid">
-							{#each group.items as idea}
-								<article class="card">
-									{#if idea.thumbnail_url}
-										<img
-											src={idea.thumbnail_url}
+							<div class="grid">
+								{#each group.items as idea}
+									{@const tiktokEmbedUrl =
+										idea.platform === "tiktok"
+											? getTikTokEmbedUrl(idea.url)
+											: null}
+									{@const instagramEmbedUrl =
+										idea.platform === "instagram"
+											? getInstagramEmbedUrl(idea.url)
+											: null}
+									<article class="card">
+										{#if tiktokEmbedUrl}
+											<iframe
+												class="card-media tiktok-frame"
+											src={tiktokEmbedUrl}
+											title="TikTok Backlog Preview"
+											loading="lazy"
+												allow="encrypted-media; picture-in-picture"
+												allowfullscreen
+											></iframe>
+										{:else if instagramEmbedUrl}
+											<iframe
+												class="card-media instagram-frame"
+												src={instagramEmbedUrl}
+												title="Instagram Backlog Preview"
+												loading="lazy"
+												allow="encrypted-media; picture-in-picture"
+												allowfullscreen
+											></iframe>
+										{:else if idea.thumbnail_url}
+											<img
+												class="card-media"
+												src={idea.thumbnail_url}
 											alt={idea.title ?? "thumbnail"}
 										/>
 									{/if}
@@ -391,6 +512,13 @@
 												rel="noreferrer">{idea.url}</a
 											>
 										</div>
+										<button
+											class="danger"
+											onclick={() => deleteIdea(idea)}
+											disabled={deletingId === idea.id}
+										>
+											{deletingId === idea.id ? "Deleting..." : "Delete"}
+										</button>
 									</div>
 								</article>
 							{/each}
@@ -541,6 +669,28 @@
 		box-shadow: 0 8px 20px rgba(37, 99, 235, 0.3);
 	}
 
+	.danger {
+		margin-top: 0.9rem;
+		border: 1px solid rgba(220, 38, 38, 0.25);
+		background: rgba(220, 38, 38, 0.08);
+		color: #b91c1c;
+		border-radius: 0.75rem;
+		padding: 0.65rem 0.9rem;
+		font-size: 0.85rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: all 0.2s ease;
+	}
+
+	.danger:hover:not(:disabled) {
+		background: rgba(220, 38, 38, 0.16);
+	}
+
+	.danger:disabled {
+		opacity: 0.6;
+		cursor: not-allowed;
+	}
+
 	.notice {
 		padding: 1rem 1.25rem;
 		border-radius: 1rem;
@@ -572,12 +722,24 @@
 		gap: 2.5rem;
 	}
 
-	.preview img {
+	.preview-media {
 		width: 100%;
 		aspect-ratio: 16 / 9;
 		object-fit: cover;
 		border-radius: 1rem;
 		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+	}
+
+	.tiktok-frame {
+		border: 0;
+		background: #000;
+		aspect-ratio: 9 / 16;
+	}
+
+	.instagram-frame {
+		border: 0;
+		background: #fff;
+		aspect-ratio: 4 / 5;
 	}
 
 	.preview-content {
@@ -708,7 +870,7 @@
 		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.08);
 	}
 
-	.card img {
+	.card-media {
 		width: 100%;
 		aspect-ratio: 16 / 9;
 		object-fit: cover;

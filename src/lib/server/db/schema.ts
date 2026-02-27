@@ -46,6 +46,11 @@ export const ideaBacklog = pgTable(
 			to: 'public',
 			using: sql`true`,
 			withCheck: sql`true`
+		}),
+		pgPolicy('public_delete_backlog', {
+			for: 'delete',
+			to: 'public',
+			using: sql`true`
 		})
 	]
 ).enableRLS();

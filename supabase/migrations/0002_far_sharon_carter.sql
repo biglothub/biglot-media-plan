@@ -1,0 +1,1 @@
+CREATE POLICY "public_delete_backlog" ON "idea_backlog" AS PERMISSIVE FOR DELETE TO public USING (true);

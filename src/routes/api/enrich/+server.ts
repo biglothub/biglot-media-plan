@@ -169,6 +169,7 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 	const timeout = setTimeout(() => controller.abort(), 15000);
 
 	let html = '';
+	let resolvedUrl = target.toString();
 	try {
 		const response = await fetch(target.toString(), {
 			headers: {
@@ -189,6 +190,7 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 			);
 		}
 
+		resolvedUrl = response.url || target.toString();
 		html = await response.text();
 	} catch {
 		return json(
@@ -249,7 +251,7 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 	const hasMetaTags = resultHasAnyMetaValue(html);
 
 	const result: EnrichResult = {
-		url: target.toString(),
+		url: resolvedUrl,
 		platform,
 		title:
 			(jsonLdSource?.name as string | undefined) ??

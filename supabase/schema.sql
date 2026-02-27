@@ -43,3 +43,9 @@ on public.idea_backlog
 for update
 using (true)
 with check (true);
+
+drop policy if exists "public delete backlog" on public.idea_backlog;
+create policy "public delete backlog"
+on public.idea_backlog
+for delete
+using (true);
