@@ -761,7 +761,7 @@
 					{#each weekdayLabels as weekday}
 						<span>{weekday}</span>
 					{/each}
-				{/each}
+				</div>
 
 				<div class="calendar-grid">
 					{#each monthCells as cell}
@@ -1178,8 +1178,33 @@
 		gap: 0.75rem;
 	}
 
+	.calendar-shell {
+		overflow-x: auto;
+	}
+
+	.calendar-weekdays,
+	.calendar-grid {
+		min-width: 920px;
+	}
+
+	.calendar-weekdays {
+		display: grid;
+		grid-template-columns: repeat(7, minmax(0, 1fr));
+		gap: 0.75rem;
+		margin-bottom: 0.75rem;
+	}
+
+	.calendar-weekdays span {
+		font-size: 0.8rem;
+		color: #64748b;
+		text-align: center;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+	}
+
 	.calendar-day {
-		min-height: 180px;
+		min-height: 160px;
 		border: 1px solid rgba(0, 0, 0, 0.08);
 		background: rgba(255, 255, 255, 0.76);
 		border-radius: 1rem;
@@ -1187,6 +1212,11 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.55rem;
+	}
+
+	.calendar-day.outside-month {
+		opacity: 0.62;
+		background: rgba(255, 255, 255, 0.45);
 	}
 
 	.calendar-day.drop-hover {
@@ -1200,7 +1230,7 @@
 	}
 
 	.calendar-day-head strong {
-		font-size: 0.9rem;
+		font-size: 1rem;
 		color: #0f172a;
 	}
 
@@ -1371,10 +1401,6 @@
 
 		.hero h1 {
 			font-size: 2.8rem;
-		}
-
-		.calendar-grid {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 	}
 </style>
