@@ -67,3 +67,30 @@ export interface ProducedVideoRow {
 	notes: string | null;
 	created_at: string;
 }
+
+export interface MonitoringContentRow {
+	id: string;
+	content_code: string;
+	title: string;
+	description: string | null;
+	notes: string | null;
+	status: string;
+	created_at: string;
+}
+
+export interface MonitoringContentPlatformRow {
+	id: string;
+	content_id: string;
+	url: string;
+	platform: SupportedPlatform;
+	title: string | null;
+	thumbnail_url: string | null;
+	published_at: string | null;
+	view_count: number | null;
+	like_count: number | null;
+	comment_count: number | null;
+	share_count: number | null;
+	save_count: number | null;
+	notes: string | null;
+	created_at: string;
+}

@@ -7,7 +7,8 @@
 	const menus = [
 		{ href: '/', label: 'Backlog' },
 		{ href: '/calendar', label: 'Shoot Calendar' },
-		{ href: '/kpi', label: 'KPI Compare' }
+		{ href: '/kpi', label: 'KPI Compare' },
+		{ href: '/monitoring', label: 'Content Monitoring' }
 	];
 
 	function isActive(href: string): boolean {

@@ -167,3 +167,101 @@ export const producedVideos = pgTable(
 		})
 	]
 ).enableRLS();
+
+export const monitoringContent = pgTable(
+	'monitoring_content',
+	{
+		id: uuid('id').defaultRandom().primaryKey(),
+		contentCode: text('content_code')
+			.notNull()
+			.default(
+				sql`'MC-' || to_char(timezone('utc', now()), 'YYYYMMDD') || '-' || upper(substring(replace(gen_random_uuid()::text, '-', '') from 1 for 8))`
+			),
+		title: text('title').notNull(),
+		description: text('description'),
+		notes: text('notes'),
+		status: text('status').notNull().default('active'),
+		createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+			.notNull()
+			.defaultNow()
+	},
+	(table) => [
+		uniqueIndex('ux_monitoring_content_code').on(table.contentCode),
+		index('idx_monitoring_content_created_at').on(table.createdAt),
+		pgPolicy('public_read_monitoring_content', {
+			for: 'select',
+			to: 'public',
+			using: sql`true`
+		}),
+		pgPolicy('public_insert_monitoring_content', {
+			for: 'insert',
+			to: 'public',
+			withCheck: sql`true`
+		}),
+		pgPolicy('public_update_monitoring_content', {
+			for: 'update',
+			to: 'public',
+			using: sql`true`,
+			withCheck: sql`true`
+		}),
+		pgPolicy('public_delete_monitoring_content', {
+			for: 'delete',
+			to: 'public',
+			using: sql`true`
+		})
+	]
+).enableRLS();
+
+export const monitoringContentPlatform = pgTable(
+	'monitoring_content_platform',
+	{
+		id: uuid('id').defaultRandom().primaryKey(),
+		contentId: uuid('content_id')
+			.notNull()
+			.references(() => monitoringContent.id, { onDelete: 'cascade' }),
+		url: text('url').notNull(),
+		platform: text('platform').notNull().$type<'youtube' | 'facebook' | 'instagram' | 'tiktok'>(),
+		title: text('title'),
+		thumbnailUrl: text('thumbnail_url'),
+		publishedAt: timestamp('published_at', { withTimezone: true, mode: 'string' }),
+		viewCount: bigint('view_count', { mode: 'number' }),
+		likeCount: bigint('like_count', { mode: 'number' }),
+		commentCount: bigint('comment_count', { mode: 'number' }),
+		shareCount: bigint('share_count', { mode: 'number' }),
+		saveCount: bigint('save_count', { mode: 'number' }),
+		notes: text('notes'),
+		createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' })
+			.notNull()
+			.defaultNow()
+	},
+	(table) => [
+		index('idx_monitoring_content_platform_content').on(table.contentId),
+		uniqueIndex('ux_monitoring_content_platform_unique').on(table.contentId, table.platform),
+		index('idx_monitoring_content_platform_platform').on(table.platform),
+		check(
+			'monitoring_content_platform_check',
+			sql`${table.platform} in ('youtube', 'facebook', 'instagram', 'tiktok')`
+		),
+		pgPolicy('public_read_monitoring_content_platform', {
+			for: 'select',
+			to: 'public',
+			using: sql`true`
+		}),
+		pgPolicy('public_insert_monitoring_content_platform', {
+			for: 'insert',
+			to: 'public',
+			withCheck: sql`true`
+		}),
+		pgPolicy('public_update_monitoring_content_platform', {
+			for: 'update',
+			to: 'public',
+			using: sql`true`,
+			withCheck: sql`true`
+		}),
+		pgPolicy('public_delete_monitoring_content_platform', {
+			for: 'delete',
+			to: 'public',
+			using: sql`true`
+		})
+	]
+).enableRLS();

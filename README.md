@@ -10,6 +10,7 @@ Workflow:
 4. กด `Save To Backlog`
 5. ลากไอเดียจาก backlog ไปวางบน `Shoot Calendar`
 6. เลือกไอเดียใน calendar แล้วเพิ่ม `Produced Video` ได้หลายแพลตฟอร์ม (YouTube/Facebook/Instagram/TikTok) เพื่อเทียบ KPI แยกแพลตฟอร์ม
+7. เข้า `Content Monitoring` เพื่อสร้างรายการ `content ที่ผลิตจริง` โดยตรง (ไม่อิง backlog) แล้วเพิ่มคลิปย้อนหลัง/ดู preview ครบทุกแพลตฟอร์ม/ดู BI performance summary
 
 ## Tech Stack
 - SvelteKit
@@ -72,6 +73,7 @@ npm run dev
 
 ## โครงสร้างสำคัญ
 - หน้า UI: [`src/routes/+page.svelte`](./src/routes/+page.svelte)
+- Content Monitoring: [`src/routes/monitoring/+page.svelte`](./src/routes/monitoring/+page.svelte)
 - Supabase client: [`src/lib/supabase.ts`](./src/lib/supabase.ts)
 - Type definitions: [`src/lib/types.ts`](./src/lib/types.ts)
 - Enrichment API: [`src/routes/api/enrich/+server.ts`](./src/routes/api/enrich/+server.ts)
@@ -85,3 +87,4 @@ npm run dev
 - ถ้าต้องการความแม่นยำระดับ production ควรเชื่อม official API ของแต่ละแพลตฟอร์ม
 - ถ้าเพิ่งอัปเดตฟีเจอร์ calendar ให้รัน `npm run db:migrate` เพื่อสร้างตาราง `production_calendar`
 - ถ้าเพิ่งอัปเดตฟีเจอร์ KPI compare ให้รัน `npm run db:migrate` เพื่อสร้างตาราง `produced_videos`
+- ถ้าเพิ่งอัปเดตฟีเจอร์ Content Monitoring ใหม่ ให้รัน `npm run db:migrate` เพื่อสร้างตาราง `monitoring_content` และ `monitoring_content_platform`
