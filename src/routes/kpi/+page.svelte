@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { hasSupabaseConfig, supabase } from '$lib/supabase';
-	import type { EnrichResult, ProductionCalendarRow, ProducedVideoRow } from '$lib/types';
+	import type {
+		EnrichResult,
+		ProductionCalendarRow,
+		ProducedVideoRow,
+		SupportedPlatform
+	} from '$lib/types';
 	import {
 		formatCalendarDate,
 		formatCount,
@@ -9,16 +14,29 @@
 		getPlatformFromUrl,
 		getTikTokEmbedUrl,
 		normalizeMetricValue,
-		numberFormatter
+		numberFormatter,
+		platformLabel,
+		platformOrder
 	} from '$lib/media-plan';
 
 	type KpiStatus = 'up' | 'down' | 'same' | 'na';
+	const availablePlatforms = platformOrder as readonly SupportedPlatform[];
+	const platformRank = new Map<SupportedPlatform, number>(
+		availablePlatforms.map((platform, index) => [platform, index])
+	);
+	const producedLinkPlaceholderByPlatform: Record<SupportedPlatform, string> = {
+		youtube: 'https://www.youtube.com/watch?v=...',
+		facebook: 'https://www.facebook.com/.../videos/...',
+		instagram: 'https://www.instagram.com/reel/...',
+		tiktok: 'https://www.tiktok.com/@username/video/...'
+	};
 
 	let calendarItems = $state<ProductionCalendarRow[]>([]);
 	let producedVideos = $state<ProducedVideoRow[]>([]);
 	let loadingCalendar = $state(false);
 	let loadingProduced = $state(false);
 	let selectedCalendarId = $state<string | null>(null);
+	let selectedPlatform = $state<SupportedPlatform>('youtube');
 	let producedLinkInput = $state('');
 	let producedNotes = $state('');
 	let producedDraft = $state<EnrichResult | null>(null);
@@ -44,14 +62,45 @@
 	);
 
 	const producedByCalendarId = $derived.by(() => {
-		const map = new Map<string, ProducedVideoRow>();
-		for (const video of producedVideos) map.set(video.calendar_id, video);
+		const map = new Map<string, ProducedVideoRow[]>();
+		for (const video of producedVideos) {
+			const bucket = map.get(video.calendar_id) ?? [];
+			bucket.push(video);
+			map.set(video.calendar_id, bucket);
+		}
+
+		for (const bucket of map.values()) {
+			bucket.sort(
+				(a, b) => (platformRank.get(a.platform) ?? 99) - (platformRank.get(b.platform) ?? 99)
+			);
+		}
+
 		return map;
 	});
 
-	const selectedProducedVideo = $derived.by(() =>
-		selectedCalendarId ? producedByCalendarId.get(selectedCalendarId) ?? null : null
+	const selectedProducedVideos = $derived.by(() =>
+		selectedCalendarId ? producedByCalendarId.get(selectedCalendarId) ?? [] : []
 	);
+
+	const selectedProducedPlatformSet = $derived.by(
+		() => new Set(selectedProducedVideos.map((video) => video.platform))
+	);
+
+	const selectedProducedVideo = $derived.by(
+		() => selectedProducedVideos.find((video) => video.platform === selectedPlatform) ?? null
+	);
+
+	const producedLinkPlaceholder = $derived.by(
+		() => producedLinkPlaceholderByPlatform[selectedPlatform]
+	);
+
+	const originalMetricsMissing = $derived.by(() => {
+		const original = selectedCalendarItem?.idea_backlog;
+		if (!original) return true;
+		return [original.view_count, original.like_count, original.comment_count, original.share_count, original.save_count].every(
+			(value) => value === null || value === undefined
+		);
+	});
 
 	const effectiveProducedPreview = $derived.by(() => {
 		if (producedDraft) {
@@ -166,6 +215,54 @@
 		return `${sign}${value.toFixed(1)}%`;
 	}
 
+	function hasAnyMetricValue(metrics: {
+		views: number | null;
+		likes: number | null;
+		comments: number | null;
+		shares: number | null;
+		saves: number | null;
+	}): boolean {
+		return Object.values(metrics).some((value) => typeof value === 'number' && Number.isFinite(value));
+	}
+
+	async function fetchEnrichResult(targetUrl: string): Promise<EnrichResult> {
+		const response = await fetch(`/api/enrich?url=${encodeURIComponent(targetUrl)}`);
+		const body = await response.json();
+		if (!response.ok) {
+			throw new Error(body.error ?? 'อ่านข้อมูลวิดีโอที่ทำจริงไม่สำเร็จ');
+		}
+		return body as EnrichResult;
+	}
+
+	function buildMergedMetrics(
+		current: typeof producedMetrics,
+		fallback: typeof producedMetrics
+	): typeof producedMetrics {
+		return {
+			views: current.views ?? fallback.views,
+			likes: current.likes ?? fallback.likes,
+			comments: current.comments ?? fallback.comments,
+			shares: current.shares ?? fallback.shares,
+			saves: current.saves ?? fallback.saves
+		};
+	}
+
+	function preferredPlatformForItem(item: ProductionCalendarRow | null): SupportedPlatform {
+		return item?.idea_backlog?.platform ?? 'youtube';
+	}
+
+	function getProducedVideoForPlatform(
+		calendarId: string | null,
+		platform: SupportedPlatform
+	): ProducedVideoRow | null {
+		if (!calendarId) return null;
+		return (
+			producedVideos.find(
+				(video) => video.calendar_id === calendarId && video.platform === platform
+			) ?? null
+		);
+	}
+
 	function resetProducedForm() {
 		producedLinkInput = '';
 		producedNotes = '';
@@ -228,17 +325,20 @@
 
 		producedVideos = (data ?? []) as ProducedVideoRow[];
 		if (selectedCalendarId) {
-			hydrateProducedForm(selectedCalendarId);
+			hydrateProducedForm(selectedCalendarId, selectedPlatform);
 		}
 	}
 
-	function hydrateProducedForm(calendarId: string | null) {
+	function hydrateProducedForm(
+		calendarId: string | null,
+		platform: SupportedPlatform = selectedPlatform
+	) {
 		if (!calendarId) {
 			resetProducedForm();
 			return;
 		}
 
-		const existing = producedVideos.find((video) => video.calendar_id === calendarId);
+		const existing = getProducedVideoForPlatform(calendarId, platform);
 		if (!existing) {
 			resetProducedForm();
 			return;
@@ -256,9 +356,21 @@
 		};
 	}
 
+	function selectProducedPlatform(platform: SupportedPlatform) {
+		selectedPlatform = platform;
+		hydrateProducedForm(selectedCalendarId, platform);
+	}
+
 	function selectCalendarItem(calendarId: string) {
 		selectedCalendarId = calendarId;
-		hydrateProducedForm(calendarId);
+		const item = sortedCalendarIdeas.find((calendarItem) => calendarItem.id === calendarId) ?? null;
+		const preferredPlatform = preferredPlatformForItem(item);
+		const availableVideo = producedVideos.find((video) => video.calendar_id === calendarId);
+		const nextPlatform =
+			getProducedVideoForPlatform(calendarId, preferredPlatform)?.platform ??
+			availableVideo?.platform ??
+			preferredPlatform;
+		selectProducedPlatform(nextPlatform);
 	}
 
 	async function analyzeProducedLink() {
@@ -277,15 +389,9 @@
 
 		analyzingProduced = true;
 		try {
-			const response = await fetch(`/api/enrich?url=${encodeURIComponent(producedLinkInput.trim())}`);
-			const body = await response.json();
-
-			if (!response.ok) {
-				errorMessage = body.error ?? 'อ่านข้อมูลวิดีโอที่ทำจริงไม่สำเร็จ';
-				return;
-			}
-
-			producedDraft = body as EnrichResult;
+			const analyzed = await fetchEnrichResult(producedLinkInput.trim());
+			producedDraft = analyzed;
+			selectedPlatform = producedDraft.platform;
 			producedLinkInput = producedDraft.url;
 			producedMetrics = {
 				views: producedDraft.metrics.views,
@@ -294,7 +400,12 @@
 				shares: producedDraft.metrics.shares,
 				saves: producedDraft.metrics.saves
 			};
-			message = 'ดึงข้อมูลวิดีโอที่ทำจริงสำเร็จแล้ว';
+
+			if (hasAnyMetricValue(producedMetrics)) {
+				message = `ดึงข้อมูลวิดีโอที่ทำจริงสำเร็จแล้ว (${platformLabel[producedDraft.platform]})`;
+			} else {
+				message = `ดึงได้เฉพาะ metadata ของ ${platformLabel[producedDraft.platform]} ยังไม่เจอ engagement อัตโนมัติ กรุณากรอก metrics ด้านล่าง`;
+			}
 		} catch (error) {
 			errorMessage =
 				error instanceof Error ? error.message : 'เกิดข้อผิดพลาดระหว่าง analyze วิดีโอที่ทำจริง';
@@ -314,7 +425,7 @@
 			return;
 		}
 
-		const finalUrl = (producedDraft?.url ?? producedLinkInput).trim();
+		const finalUrl = producedLinkInput.trim() || producedDraft?.url?.trim() || '';
 		if (!finalUrl) {
 			errorMessage = 'กรุณาใส่ลิงก์วิดีโอที่ทำจริง';
 			return;
@@ -324,28 +435,50 @@
 		message = '';
 		savingProduced = true;
 
+		let effectiveDraft = producedDraft;
+		let autoAnalyzeFailed = false;
+		if (!effectiveDraft || effectiveDraft.url !== finalUrl) {
+			try {
+				effectiveDraft = await fetchEnrichResult(finalUrl);
+			} catch {
+				autoAnalyzeFailed = true;
+			}
+		}
+
+		const mergedMetrics = buildMergedMetrics(producedMetrics, {
+			views: effectiveDraft?.metrics.views ?? null,
+			likes: effectiveDraft?.metrics.likes ?? null,
+			comments: effectiveDraft?.metrics.comments ?? null,
+			shares: effectiveDraft?.metrics.shares ?? null,
+			saves: effectiveDraft?.metrics.saves ?? null
+		});
+
+		const persistedUrl = effectiveDraft?.url ?? finalUrl;
+		producedDraft = effectiveDraft ?? producedDraft;
+		producedLinkInput = persistedUrl;
+		producedMetrics = mergedMetrics;
+
 		const sourcePlatform =
-			producedDraft?.platform ??
-			getPlatformFromUrl(finalUrl) ??
-			selectedCalendarItem.idea_backlog?.platform ??
-			'youtube';
+			effectiveDraft?.platform ?? getPlatformFromUrl(persistedUrl) ?? selectedPlatform ?? 'youtube';
 
 		const payload = {
 			calendar_id: selectedCalendarItem.id,
-			url: finalUrl,
+			url: persistedUrl,
 			platform: sourcePlatform,
-			title: producedDraft?.title ?? null,
-			thumbnail_url: producedDraft?.thumbnailUrl ?? null,
-			published_at: producedDraft?.publishedAt ?? null,
-			view_count: producedMetrics.views,
-			like_count: producedMetrics.likes,
-			comment_count: producedMetrics.comments,
-			share_count: producedMetrics.shares,
-			save_count: producedMetrics.saves,
+			title: effectiveDraft?.title ?? producedDraft?.title ?? null,
+			thumbnail_url: effectiveDraft?.thumbnailUrl ?? producedDraft?.thumbnailUrl ?? null,
+			published_at: effectiveDraft?.publishedAt ?? producedDraft?.publishedAt ?? null,
+			view_count: mergedMetrics.views,
+			like_count: mergedMetrics.likes,
+			comment_count: mergedMetrics.comments,
+			share_count: mergedMetrics.shares,
+			save_count: mergedMetrics.saves,
 			notes: producedNotes.trim() || null
 		};
 
-		const { error } = await supabase.from('produced_videos').upsert(payload, { onConflict: 'calendar_id' });
+		const { error } = await supabase
+			.from('produced_videos')
+			.upsert(payload, { onConflict: 'calendar_id,platform' });
 		savingProduced = false;
 
 		if (error) {
@@ -353,9 +486,14 @@
 			return;
 		}
 
-		message = 'บันทึกวิดีโอที่ทำจริงแล้ว';
+		selectedPlatform = sourcePlatform;
+		if (autoAnalyzeFailed) {
+			message = `บันทึกวิดีโอที่ทำจริงแล้ว (${platformLabel[sourcePlatform]}) แต่ analyze อัตโนมัติไม่สำเร็จ ใช้ค่าที่กรอกไว้`;
+		} else {
+			message = `Analyze + Save สำเร็จแล้ว (${platformLabel[sourcePlatform]})`;
+		}
 		await loadProducedVideos();
-		hydrateProducedForm(selectedCalendarItem.id);
+		hydrateProducedForm(selectedCalendarItem.id, sourcePlatform);
 	}
 
 	onMount(async () => {
@@ -406,37 +544,80 @@
 							<button
 								class={`kpi-idea-btn ${selectedCalendarId === item.id ? 'active' : ''}`}
 								onclick={() => selectCalendarItem(item.id)}
-							>
-								<div>
-									<strong>{item.idea_backlog?.title ?? 'Untitled idea'}</strong>
-									<p>{formatCalendarDate(item.shoot_date)}</p>
-								</div>
-								{#if producedByCalendarId.has(item.id)}
-									<span class="chip">Compared</span>
-								{/if}
-							</button>
-						{/each}
-					</div>
-				{/if}
+								>
+									<div>
+										<strong>{item.idea_backlog?.title ?? 'Untitled idea'}</strong>
+										<p>{formatCalendarDate(item.shoot_date)}</p>
+									</div>
+									{#if (producedByCalendarId.get(item.id) ?? []).length > 0}
+										<span class="chip">
+											{(producedByCalendarId.get(item.id) ?? []).length} Platform{(producedByCalendarId.get(item.id) ?? []).length > 1
+												? 's'
+												: ''}
+										</span>
+									{/if}
+								</button>
+							{/each}
+						</div>
+					{/if}
 			</div>
 
 			<div class="kpi-right">
 				{#if !selectedCalendarItem}
 					<p class="empty">เลือกไอเดียจากฝั่งซ้ายเพื่อเริ่มเทียบ KPI</p>
 				{:else}
-					<div class="kpi-source">
-						<p class="kicker small">Original Idea</p>
-						<h3>{selectedCalendarItem.idea_backlog?.title ?? 'Untitled idea'}</h3>
-						<p class="meta">{formatCalendarDate(selectedCalendarItem.shoot_date)}</p>
-					</div>
+						<div class="kpi-source">
+							<p class="kicker small">Original Idea</p>
+							<h3>{selectedCalendarItem.idea_backlog?.title ?? 'Untitled idea'}</h3>
+							<p class="meta">{formatCalendarDate(selectedCalendarItem.shoot_date)}</p>
+						</div>
 
-					<div class="row">
-						<label for="produced-link">Produced Video Link</label>
-						<input
-							id="produced-link"
-							bind:value={producedLinkInput}
-							placeholder="https://www.youtube.com/watch?v=..."
-						/>
+						<div class="platform-section">
+							<p class="kicker small">Produced Platform</p>
+							<div class="platform-switcher">
+								{#each availablePlatforms as platform}
+									<button
+										type="button"
+										class={`platform-btn ${selectedPlatform === platform ? 'active' : ''}`}
+										onclick={() => selectProducedPlatform(platform)}
+									>
+										<span>{platformLabel[platform]}</span>
+										{#if selectedProducedPlatformSet.has(platform)}
+											<span class="platform-dot" aria-hidden="true"></span>
+										{/if}
+									</button>
+								{/each}
+							</div>
+
+							{#if selectedProducedVideos.length > 0}
+								<div class="produced-summary">
+									{#each selectedProducedVideos as video}
+										<button
+											type="button"
+											class={`produced-summary-item ${selectedPlatform === video.platform ? 'active' : ''}`}
+											onclick={() => selectProducedPlatform(video.platform)}
+										>
+											<strong>{platformLabel[video.platform]}</strong>
+											<span>{formatCount(video.view_count)} views</span>
+										</button>
+									{/each}
+								</div>
+							{/if}
+
+							{#if selectedProducedVideo}
+								<p class="meta">กำลังเปรียบเทียบ KPI ของ {platformLabel[selectedPlatform]}</p>
+							{:else}
+								<p class="meta">ยังไม่มี KPI ของ {platformLabel[selectedPlatform]}</p>
+							{/if}
+						</div>
+
+						<div class="row">
+							<label for="produced-link">Produced Video Link ({platformLabel[selectedPlatform]})</label>
+							<input
+								id="produced-link"
+								bind:value={producedLinkInput}
+								placeholder={producedLinkPlaceholder}
+							/>
 					</div>
 					<div class="kpi-actions">
 						<button class="ghost" onclick={analyzeProducedLink} disabled={analyzingProduced}>
@@ -518,8 +699,11 @@
 						></textarea>
 					</div>
 
-					<div class="kpi-table-wrap">
-						<table class="kpi-table">
+						<div class="kpi-table-wrap">
+							{#if originalMetricsMissing}
+								<p class="meta">Original idea ยังไม่มี metrics จึงคำนวณ Delta/%/Status ไม่ได้จนกว่าจะมีค่าอ้างอิง</p>
+							{/if}
+							<table class="kpi-table">
 							<thead>
 								<tr>
 									<th>Metric</th>
@@ -695,6 +879,74 @@
 
 	.kpi-source h3 {
 		margin: 0.2rem 0;
+	}
+
+	.platform-section {
+		display: grid;
+		gap: 0.45rem;
+		margin: 0.8rem 0;
+	}
+
+	.platform-switcher {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.45rem;
+	}
+
+	.platform-btn {
+		border: 1px solid rgba(15, 23, 42, 0.14);
+		background: #fff;
+		border-radius: 999px;
+		padding: 0.38rem 0.62rem;
+		font-size: 0.75rem;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.34rem;
+		cursor: pointer;
+	}
+
+	.platform-btn.active {
+		border-color: rgba(37, 99, 235, 0.46);
+		background: rgba(37, 99, 235, 0.1);
+		color: #1d4ed8;
+	}
+
+	.platform-dot {
+		width: 0.4rem;
+		height: 0.4rem;
+		border-radius: 50%;
+		background: #16a34a;
+	}
+
+	.produced-summary {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+		gap: 0.4rem;
+	}
+
+	.produced-summary-item {
+		border: 1px solid rgba(15, 23, 42, 0.1);
+		background: rgba(15, 23, 42, 0.03);
+		border-radius: 0.66rem;
+		padding: 0.45rem 0.5rem;
+		display: grid;
+		gap: 0.1rem;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.produced-summary-item strong {
+		font-size: 0.74rem;
+	}
+
+	.produced-summary-item span {
+		font-size: 0.71rem;
+		color: #64748b;
+	}
+
+	.produced-summary-item.active {
+		border-color: rgba(37, 99, 235, 0.42);
+		background: rgba(37, 99, 235, 0.08);
 	}
 
 	.meta {

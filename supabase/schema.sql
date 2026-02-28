@@ -106,7 +106,8 @@ create table if not exists public.produced_videos (
   created_at timestamptz not null default timezone('utc', now())
 );
 
-create unique index if not exists ux_produced_videos_calendar on public.produced_videos (calendar_id);
+create index if not exists idx_produced_videos_calendar on public.produced_videos (calendar_id);
+create unique index if not exists ux_produced_videos_calendar_platform on public.produced_videos (calendar_id, platform);
 create index if not exists idx_produced_videos_platform on public.produced_videos (platform);
 
 alter table public.produced_videos enable row level security;

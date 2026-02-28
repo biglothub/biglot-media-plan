@@ -8,7 +8,7 @@ Workflow:
 3. ตรวจ/แก้ค่า engagement
 4. กด `Save To Backlog`
 5. ลากไอเดียจาก backlog ไปวางบน `Shoot Calendar`
-6. เลือกไอเดียใน calendar แล้วเพิ่ม `Produced Video` เพื่อเทียบ KPI
+6. เลือกไอเดียใน calendar แล้วเพิ่ม `Produced Video` ได้หลายแพลตฟอร์ม (YouTube/Facebook/Instagram/TikTok) เพื่อเทียบ KPI แยกแพลตฟอร์ม
 
 ## Tech Stack
 - SvelteKit

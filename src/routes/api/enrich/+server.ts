@@ -28,7 +28,22 @@ function normalizeCount(value: unknown): number | null {
 	const raw = String(value).trim();
 	if (!raw) return null;
 
-	const cleaned = raw.replace(/[^0-9.]/g, '');
+	const compact = raw
+		.toLowerCase()
+		.replace(/\s+/g, '')
+		.replace(/,/g, '')
+		.replace(/_/g, '');
+	const compactMatch = compact.match(/^([0-9]*\.?[0-9]+)([kmb])?$/i);
+	if (compactMatch) {
+		const base = Number(compactMatch[1]);
+		if (!Number.isFinite(base)) return null;
+
+		const suffix = compactMatch[2]?.toLowerCase();
+		const multiplier = suffix === 'k' ? 1_000 : suffix === 'm' ? 1_000_000 : suffix === 'b' ? 1_000_000_000 : 1;
+		return Math.round(base * multiplier);
+	}
+
+	const cleaned = raw.replace(/[^0-9]/g, '');
 	if (!cleaned) return null;
 
 	const parsed = Number(cleaned);
@@ -42,6 +57,12 @@ function decodeEntities(input: string): string {
 		.replace(/&#39;/g, "'")
 		.replace(/&lt;/g, '<')
 		.replace(/&gt;/g, '>');
+}
+
+function decodeUnicodeEscapes(input: string): string {
+	return input.replace(/\\u([0-9a-fA-F]{4})/g, (_match, hex) =>
+		String.fromCharCode(Number.parseInt(hex, 16))
+	);
 }
 
 function extractMetaContent(html: string, key: string): string | null {
@@ -138,6 +159,54 @@ function mergeMetrics(primary: EnrichMetrics, fallback: EnrichMetrics): EnrichMe
 		shares: primary.shares ?? fallback.shares,
 		saves: primary.saves ?? fallback.saves
 	};
+}
+
+function hasAnyMetricValue(metrics: EnrichMetrics): boolean {
+	return Object.values(metrics).some((value) => typeof value === 'number' && Number.isFinite(value));
+}
+
+function extractMetricsFromDescription(description: string | null): EnrichMetrics {
+	const metrics: EnrichMetrics = {
+		views: null,
+		likes: null,
+		comments: null,
+		shares: null,
+		saves: null
+	};
+	if (!description) return metrics;
+
+	const normalized = description.replace(/\u00a0/g, ' ').toLowerCase();
+	const readByPattern = (patterns: RegExp[]): number | null => {
+		for (const pattern of patterns) {
+			const matched = normalized.match(pattern)?.[1];
+			const parsed = normalizeCount(matched);
+			if (parsed !== null) return parsed;
+		}
+		return null;
+	};
+
+	metrics.likes = readByPattern([
+		/([0-9][0-9.,kmb]*)\s*(?:likes?|ถูกใจ|คนถูกใจ)/i,
+		/(?:likes?|ถูกใจ|คนถูกใจ)\s*([0-9][0-9.,kmb]*)/i
+	]);
+	metrics.comments = readByPattern([
+		/([0-9][0-9.,kmb]*)\s*(?:comments?|ความคิดเห็น)/i,
+		/(?:comments?|ความคิดเห็น)\s*([0-9][0-9.,kmb]*)/i
+	]);
+	metrics.views = readByPattern([
+		/([0-9][0-9.,kmb]*)\s*(?:views?|plays?|การเล่น|ครั้งรับชม|ยอดดู)/i,
+		/(?:views?|plays?|การเล่น|ครั้งรับชม|ยอดดู)\s*([0-9][0-9.,kmb]*)/i
+	]);
+	metrics.shares = readByPattern([
+		/([0-9][0-9.,kmb]*)\s*(?:shares?|แชร์)/i,
+		/(?:shares?|แชร์)\s*([0-9][0-9.,kmb]*)/i
+	]);
+	metrics.saves = readByPattern([
+		/([0-9][0-9.,kmb]*)\s*(?:saves?|บันทึก)/i,
+		/(?:saves?|บันทึก)\s*([0-9][0-9.,kmb]*)/i
+	]);
+
+	return metrics;
 }
 
 async function fetchInstagramOEmbed(
@@ -238,6 +307,11 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 		clearTimeout(timeout);
 	}
 
+	const instagramOEmbed =
+		platform === 'instagram'
+			? await fetchInstagramOEmbed(resolvedUrl || target.toString(), fetch)
+			: { title: null, authorName: null, thumbnailUrl: null };
+
 	let jsonLdSource: Record<string, unknown> | null = null;
 	const jsonLdMatches = html.matchAll(
 		/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
@@ -263,19 +337,57 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 		}
 	}
 
+	const metricsHtml = decodeUnicodeEscapes(html);
 	const regexMetrics: EnrichMetrics = {
-		views: extractFirstByRegex(html, [/"viewCount":"?([0-9,.]+)"/i, /"playCount":\s*"?([0-9,.]+)"?/i]),
-		likes: extractFirstByRegex(html, [/"likeCount":\s*"?([0-9,.]+)"?/i, /"diggCount":\s*"?([0-9,.]+)"?/i]),
-		comments: extractFirstByRegex(html, [
-			/"commentCount":\s*"?([0-9,.]+)"?/i,
-			/"comment_count":\s*"?([0-9,.]+)"?/i
+		views: extractFirstByRegex(metricsHtml, [
+			/"viewCount":"?([0-9.,kmb]+)"/i,
+			/\\"viewCount\\":\\"?([0-9.,kmb]+)\\"?/i,
+			/"playCount":\s*"?([0-9.,kmb]+)"?/i,
+			/\\"playCount\\":\s*\\"?([0-9.,kmb]+)\\"?/i,
+			/"video_view_count":\s*"?([0-9.,kmb]+)"?/i,
+			/\\"video_view_count\\":\s*\\"?([0-9.,kmb]+)\\"?/i,
+			/"video_play_count":\s*"?([0-9.,kmb]+)"?/i,
+			/\\"video_play_count\\":\s*\\"?([0-9.,kmb]+)\\"?/i
 		]),
-		shares: extractFirstByRegex(html, [/"shareCount":\s*"?([0-9,.]+)"?/i]),
-		saves: extractFirstByRegex(html, [/"saveCount":\s*"?([0-9,.]+)"?/i, /"collectCount":\s*"?([0-9,.]+)"?/i])
+		likes: extractFirstByRegex(metricsHtml, [
+			/"likeCount":\s*"?([0-9.,kmb]+)"?/i,
+			/\\"likeCount\\":\s*\\"?([0-9.,kmb]+)\\"?/i,
+			/"diggCount":\s*"?([0-9.,kmb]+)"?/i,
+			/\\"diggCount\\":\s*\\"?([0-9.,kmb]+)\\"?/i,
+			/"edge_media_preview_like"\s*:\s*\{"count"\s*:\s*([0-9.,kmb]+)/i,
+			/\\"edge_media_preview_like\\":\s*\{\\"count\\":\s*([0-9.,kmb]+)/i
+		]),
+		comments: extractFirstByRegex(metricsHtml, [
+			/"commentCount":\s*"?([0-9.,kmb]+)"?/i,
+			/\\"commentCount\\":\s*\\"?([0-9.,kmb]+)\\"?/i,
+			/"comment_count":\s*"?([0-9.,kmb]+)"?/i,
+			/\\"comment_count\\":\s*\\"?([0-9.,kmb]+)\\"?/i,
+			/"edge_media_to_comment"\s*:\s*\{"count"\s*:\s*([0-9.,kmb]+)/i,
+			/\\"edge_media_to_comment\\":\s*\{\\"count\\":\s*([0-9.,kmb]+)/i,
+			/"edge_media_to_parent_comment"\s*:\s*\{"count"\s*:\s*([0-9.,kmb]+)/i,
+			/\\"edge_media_to_parent_comment\\":\s*\{\\"count\\":\s*([0-9.,kmb]+)/i
+		]),
+		shares: extractFirstByRegex(metricsHtml, [
+			/"shareCount":\s*"?([0-9.,kmb]+)"?/i,
+			/\\"shareCount\\":\s*\\"?([0-9.,kmb]+)\\"?/i
+		]),
+		saves: extractFirstByRegex(metricsHtml, [
+			/"saveCount":\s*"?([0-9.,kmb]+)"?/i,
+			/\\"saveCount\\":\s*\\"?([0-9.,kmb]+)\\"?/i,
+			/"collectCount":\s*"?([0-9.,kmb]+)"?/i,
+			/\\"collectCount\\":\s*\\"?([0-9.,kmb]+)\\"?/i
+		])
 	};
 
+	const pageDescriptionMetrics = extractMetricsFromDescription(
+		extractMetaContent(metricsHtml, 'og:description') ?? extractMetaContent(metricsHtml, 'description')
+	);
+	const oEmbedTitleMetrics = extractMetricsFromDescription(instagramOEmbed.title);
 	const jsonLdMetrics = jsonLdSource ? extractInteractionMetrics(jsonLdSource) : regexMetrics;
-	const metrics = mergeMetrics(jsonLdMetrics, regexMetrics);
+	const metrics = mergeMetrics(
+		mergeMetrics(mergeMetrics(jsonLdMetrics, regexMetrics), pageDescriptionMetrics),
+		oEmbedTitleMetrics
+	);
 	const fallbackUsed =
 		(jsonLdMetrics.views === null && regexMetrics.views !== null) ||
 		(jsonLdMetrics.likes === null && regexMetrics.likes !== null) ||
@@ -286,20 +398,16 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 	const extractedTitle =
 		(jsonLdSource?.name as string | undefined) ??
 		(jsonLdSource?.headline as string | undefined) ??
-		extractMetaContent(html, 'og:title') ??
-		extractMetaContent(html, 'twitter:title');
+		extractMetaContent(metricsHtml, 'og:title') ??
+		extractMetaContent(metricsHtml, 'twitter:title');
 	const extractedDescription =
 		(jsonLdSource?.description as string | undefined) ??
-		extractMetaContent(html, 'og:description') ??
-		extractMetaContent(html, 'description') ??
-		extractMetaContent(html, 'twitter:description');
+		extractMetaContent(metricsHtml, 'og:description') ??
+		extractMetaContent(metricsHtml, 'description') ??
+		extractMetaContent(metricsHtml, 'twitter:description');
 
 	const normalizedTitle = extractedTitle?.trim() || null;
 	const normalizedDescription = extractedDescription?.trim() || null;
-	const instagramOEmbed =
-		platform === 'instagram'
-			? await fetchInstagramOEmbed(resolvedUrl || target.toString(), fetch)
-			: { title: null, authorName: null, thumbnailUrl: null };
 	const resolvedTitle =
 		platform === 'instagram'
 			? normalizedTitle ?? instagramOEmbed.title ?? normalizedDescription
@@ -317,23 +425,26 @@ export const GET: RequestHandler = async ({ url, fetch }) => {
 			instagramOEmbed.authorName ??
 			extractMetaContent(html, 'author') ??
 			extractMetaContent(html, 'og:site_name'),
-		thumbnailUrl:
-			(typeof jsonLdSource?.thumbnailUrl === 'string'
-				? (jsonLdSource.thumbnailUrl as string)
-				: Array.isArray(jsonLdSource?.thumbnailUrl)
-					? (jsonLdSource.thumbnailUrl[0] as string | undefined)
-					: undefined) ??
-			instagramOEmbed.thumbnailUrl ??
-			extractMetaContent(html, 'og:image') ??
-			extractMetaContent(html, 'twitter:image'),
-		publishedAt:
-			(jsonLdSource?.uploadDate as string | undefined) ??
-			(jsonLdSource?.datePublished as string | undefined) ??
-			extractMetaContent(html, 'article:published_time'),
+			thumbnailUrl:
+				(typeof jsonLdSource?.thumbnailUrl === 'string'
+					? (jsonLdSource.thumbnailUrl as string)
+					: Array.isArray(jsonLdSource?.thumbnailUrl)
+						? (jsonLdSource.thumbnailUrl[0] as string | undefined)
+						: undefined) ??
+				instagramOEmbed.thumbnailUrl ??
+				extractMetaContent(metricsHtml, 'og:image') ??
+				extractMetaContent(metricsHtml, 'twitter:image'),
+			publishedAt:
+				(jsonLdSource?.uploadDate as string | undefined) ??
+				(jsonLdSource?.datePublished as string | undefined) ??
+				extractMetaContent(metricsHtml, 'article:published_time'),
 		metrics,
-		source: [jsonLdSource ? 'json-ld' : null, hasMetaTags ? 'meta-tags' : null, fallbackUsed ? 'regex-fallback' : null].filter(
-			(value, index, self): value is string => value !== null && self.indexOf(value) === index
-		)
+		source: [
+			jsonLdSource ? 'json-ld' : null,
+			hasMetaTags ? 'meta-tags' : null,
+			fallbackUsed ? 'regex-fallback' : null,
+			platform === 'instagram' && hasAnyMetricValue(oEmbedTitleMetrics) ? 'instagram-oembed' : null
+		].filter((value, index, self): value is string => value !== null && self.indexOf(value) === index)
 	};
 
 	return json(result, {

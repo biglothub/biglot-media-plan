@@ -131,7 +131,8 @@ export const producedVideos = pgTable(
 			.defaultNow()
 	},
 	(table) => [
-		uniqueIndex('ux_produced_videos_calendar').on(table.calendarId),
+		index('idx_produced_videos_calendar').on(table.calendarId),
+		uniqueIndex('ux_produced_videos_calendar_platform').on(table.calendarId, table.platform),
 		index('idx_produced_videos_platform').on(table.platform),
 		check(
 			'produced_videos_platform_check',
