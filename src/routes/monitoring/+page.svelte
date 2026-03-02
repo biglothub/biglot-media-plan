@@ -28,10 +28,11 @@
 	type PlatformStat = {
 		platform: SupportedPlatform;
 		clipCount: number;
-		totalViews: number;
-		totalEngagement: number;
+		totalViews: number | null;
+		totalEngagement: number | null;
 		avgViews: number | null;
 		engagementRate: number | null;
+		hasAnyData: boolean;
 	};
 
 	const availablePlatforms = platformOrder as readonly SupportedPlatform[];
@@ -206,10 +207,11 @@
 			statsMap.set(platform, {
 				platform,
 				clipCount: 0,
-				totalViews: 0,
-				totalEngagement: 0,
+				totalViews: null,
+				totalEngagement: null,
 				avgViews: null,
 				engagementRate: null,
+				hasAnyData: false,
 			});
 		}
 
@@ -217,16 +219,26 @@
 			const stat = statsMap.get(clip.platform);
 			if (!stat) continue;
 			stat.clipCount += 1;
-			stat.totalViews += clip.view_count ?? 0;
-			stat.totalEngagement += engagementValue(clip);
+			const hasViews =
+				clip.view_count !== null && clip.view_count !== undefined;
+			const eng = engagementValue(clip);
+			const hasEng = eng > 0;
+			if (hasViews || hasEng) {
+				stat.hasAnyData = true;
+				stat.totalViews =
+					(stat.totalViews ?? 0) + (clip.view_count ?? 0);
+				stat.totalEngagement = (stat.totalEngagement ?? 0) + eng;
+			}
 		}
 
 		for (const stat of statsMap.values()) {
 			stat.avgViews =
-				stat.clipCount > 0 ? stat.totalViews / stat.clipCount : null;
+				stat.clipCount > 0 && stat.totalViews !== null
+					? stat.totalViews / stat.clipCount
+					: null;
 			stat.engagementRate =
-				stat.totalViews > 0
-					? (stat.totalEngagement / stat.totalViews) * 100
+				stat.totalViews !== null && stat.totalViews > 0
+					? ((stat.totalEngagement ?? 0) / stat.totalViews) * 100
 					: null;
 		}
 
