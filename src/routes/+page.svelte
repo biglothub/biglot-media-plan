@@ -399,10 +399,11 @@
 		errorMessage = "";
 		message = "";
 
-		const { error } = await supabase
+		const { data, error } = await supabase
 			.from("idea_backlog")
 			.delete()
-			.eq("id", idea.id);
+			.eq("id", idea.id)
+			.select("id");
 		deletingId = null;
 
 		if (error) {
@@ -411,14 +412,16 @@
 			return;
 		}
 
-		ideas = ideas.filter((item) => item.id !== idea.id);
-		if (scheduledBacklogIds.has(idea.id)) {
-			const next = new Set(scheduledBacklogIds);
-			next.delete(idea.id);
-			scheduledBacklogIds = next;
+		if (!data || data.length === 0) {
+			errorMessage = `ลบไม่สำเร็จ: ระบบไม่ได้รับอนุญาตให้ลบรายการนี้ (RLS policy blocked)`;
+			scrollToTop();
+			await loadIdeas();
+			return;
 		}
+
 		message = "ลบออกจาก backlog แล้ว";
 		scrollToTop();
+		await Promise.all([loadIdeas(), loadScheduledBacklogIds()]);
 	}
 
 	onMount(async () => {

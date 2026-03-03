@@ -169,10 +169,11 @@
 		if (!supabase) return;
 		errorMessage = "";
 
-		const { error } = await supabase
+		const { data, error } = await supabase
 			.from("production_calendar")
 			.delete()
-			.eq("backlog_id", backlogId);
+			.eq("backlog_id", backlogId)
+			.select("id");
 
 		if (error) {
 			errorMessage = `ลบออกจาก calendar ไม่สำเร็จ: ${error.message}`;
@@ -180,11 +181,16 @@
 			return;
 		}
 
+		if (!data || data.length === 0) {
+			errorMessage = `ลบออกจาก calendar ไม่สำเร็จ: ระบบไม่ได้รับอนุญาตให้ลบรายการนี้ (RLS policy blocked)`;
+			scrollToTop();
+			await loadCalendar();
+			return;
+		}
+
 		message = "นำออกจาก calendar แล้ว";
 		scrollToTop();
-		calendarItems = calendarItems.filter(
-			(item) => item.backlog_id !== backlogId,
-		);
+		await loadCalendar();
 	}
 
 	onMount(async () => {

@@ -550,10 +550,11 @@
 		errorMessage = "";
 		message = "";
 
-		const { error } = await supabase
+		const { data, error } = await supabase
 			.from("monitoring_content")
 			.delete()
-			.eq("id", selectedContent.id);
+			.eq("id", selectedContent.id)
+			.select("id");
 		deletingContent = false;
 
 		if (error) {
@@ -562,11 +563,16 @@
 			return;
 		}
 
-		const deletedId = selectedContent.id;
-		contents = contents.filter((item) => item.id !== deletedId);
-		clips = clips.filter((item) => item.content_id !== deletedId);
+		if (!data || data.length === 0) {
+			errorMessage = `ลบ content ไม่สำเร็จ: ระบบไม่ได้รับอนุญาตให้ลบรายการนี้ (RLS policy blocked)`;
+			scrollToTop();
+			await Promise.all([loadContents(), loadClips()]);
+			return;
+		}
+
 		selectedContentId = null;
 		resetClipForm();
+		await Promise.all([loadContents(), loadClips()]);
 		if (contents.length > 0) {
 			selectContent(contents[0].id);
 		}
@@ -735,10 +741,11 @@
 		errorMessage = "";
 		message = "";
 
-		const { error } = await supabase
+		const { data, error } = await supabase
 			.from("monitoring_content_platform")
 			.delete()
-			.eq("id", selectedPlatformClip.id);
+			.eq("id", selectedPlatformClip.id)
+			.select("id");
 		deletingClip = false;
 
 		if (error) {
@@ -747,7 +754,14 @@
 			return;
 		}
 
-		clips = clips.filter((item) => item.id !== selectedPlatformClip.id);
+		if (!data || data.length === 0) {
+			errorMessage = `ลบคลิปไม่สำเร็จ: ระบบไม่ได้รับอนุญาตให้ลบรายการนี้ (RLS policy blocked)`;
+			scrollToTop();
+			await loadClips();
+			return;
+		}
+
+		await loadClips();
 		hydrateClipForm(selectedContentId, selectedPlatform);
 		message = `ลบคลิป ${platformLabel[selectedPlatform]} แล้ว`;
 		scrollToTop();
