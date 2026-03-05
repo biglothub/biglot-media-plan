@@ -417,10 +417,10 @@
 
 			if (hasAnyMetricValue(producedMetrics)) {
 				message = `ดึงข้อมูลวิดีโอที่ทำจริงสำเร็จแล้ว (${platformLabel[producedDraft.platform]})`;
-			setTimeout(() => { message = ''; }, 4000);
+				setTimeout(() => { message = ''; }, 4000);
 			} else {
 				message = `ดึงได้เฉพาะ metadata ของ ${platformLabel[producedDraft.platform]} ยังไม่เจอ engagement อัตโนมัติ กรุณากรอก metrics ด้านล่าง`;
-			setTimeout(() => { message = ''; }, 4000);
+				setTimeout(() => { message = ''; }, 4000);
 			}
 		} catch (error) {
 			errorMessage =
@@ -505,10 +505,10 @@
 		selectedPlatform = sourcePlatform;
 		if (autoAnalyzeFailed) {
 			message = `บันทึกวิดีโอที่ทำจริงแล้ว (${platformLabel[sourcePlatform]}) แต่ analyze อัตโนมัติไม่สำเร็จ ใช้ค่าที่กรอกไว้`;
-		setTimeout(() => { message = ''; }, 4000);
+			setTimeout(() => { message = ''; }, 4000);
 		} else {
 			message = `Analyze + Save สำเร็จแล้ว (${platformLabel[sourcePlatform]})`;
-		setTimeout(() => { message = ''; }, 4000);
+			setTimeout(() => { message = ''; }, 4000);
 		}
 		await loadProducedVideos();
 		hydrateProducedForm(selectedCalendarItem.id, sourcePlatform);
