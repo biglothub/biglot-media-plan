@@ -1,7 +1,4 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { config } from 'dotenv';
-
-config({ quiet: true });
 
 const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 

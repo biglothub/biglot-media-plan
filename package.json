@@ -5,12 +5,15 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
-		"dev:auto": "node scripts/dev-auto.mjs",
+		"dev:auto": "node --env-file=.env scripts/dev-auto.mjs",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"db:check": "node scripts/db-check.mjs",
+		"db:migrate": "node --env-file=.env scripts/db-migrate.mjs",
+		"db:push:auto": "node --env-file=.env scripts/db-migrate.mjs"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-auto": "^7.0.0",
@@ -22,6 +25,7 @@
 		"vite": "^7.3.1"
 	},
 	"dependencies": {
-		"@supabase/supabase-js": "^2.98.0"
+		"@supabase/supabase-js": "^2.98.0",
+		"postgres": "^3.4.8"
 	}
 }
