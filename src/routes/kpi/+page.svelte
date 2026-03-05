@@ -417,8 +417,10 @@
 
 			if (hasAnyMetricValue(producedMetrics)) {
 				message = `ดึงข้อมูลวิดีโอที่ทำจริงสำเร็จแล้ว (${platformLabel[producedDraft.platform]})`;
+			setTimeout(() => { message = ''; }, 4000);
 			} else {
 				message = `ดึงได้เฉพาะ metadata ของ ${platformLabel[producedDraft.platform]} ยังไม่เจอ engagement อัตโนมัติ กรุณากรอก metrics ด้านล่าง`;
+			setTimeout(() => { message = ''; }, 4000);
 			}
 		} catch (error) {
 			errorMessage =
@@ -503,11 +505,37 @@
 		selectedPlatform = sourcePlatform;
 		if (autoAnalyzeFailed) {
 			message = `บันทึกวิดีโอที่ทำจริงแล้ว (${platformLabel[sourcePlatform]}) แต่ analyze อัตโนมัติไม่สำเร็จ ใช้ค่าที่กรอกไว้`;
+		setTimeout(() => { message = ''; }, 4000);
 		} else {
 			message = `Analyze + Save สำเร็จแล้ว (${platformLabel[sourcePlatform]})`;
+		setTimeout(() => { message = ''; }, 4000);
 		}
 		await loadProducedVideos();
 		hydrateProducedForm(selectedCalendarItem.id, sourcePlatform);
+	}
+
+	function exportKpiCSV() {
+		const headers = ['Code','Title','Shoot Date','Platform','Original Views','Original Likes','Original Comments','Original Shares','Original Saves','Produced Views','Produced Likes','Produced Comments','Produced Shares','Produced Saves'];
+		const rows = sortedCalendarIdeas.map(item => {
+			const bl = item.idea_backlog;
+			const produced = (producedByCalendarId.get(item.id) ?? [])[0];
+			return [
+				bl ? backlogCode(bl) : item.id.slice(0,8),
+				(bl?.title ?? '').replace(/"/g, '""'),
+				item.shoot_date,
+				produced?.platform ?? bl?.platform ?? '',
+				bl?.view_count ?? '', bl?.like_count ?? '', bl?.comment_count ?? '', bl?.share_count ?? '', bl?.save_count ?? '',
+				produced?.view_count ?? '', produced?.like_count ?? '', produced?.comment_count ?? '', produced?.share_count ?? '', produced?.save_count ?? '',
+			].map(v => `"${v}"`).join(',');
+		});
+		const csv = [headers.join(','), ...rows].join('\n');
+		const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `kpi-compare-${new Date().toISOString().slice(0,10)}.csv`;
+		a.click();
+		URL.revokeObjectURL(url);
 	}
 
 	onMount(async () => {
@@ -545,9 +573,12 @@
 			<div class="kpi-left">
 				<div class="list-head">
 					<h2>Calendar Ideas</h2>
-					{#if loadingCalendar}
-						<span>Loading...</span>
-					{/if}
+					<div style="display:flex;gap:0.5rem;align-items:center">
+						{#if loadingCalendar}<span>Loading...</span>{/if}
+						{#if sortedCalendarIdeas.length > 0}
+							<button class="export-btn" onclick={exportKpiCSV}>Export CSV</button>
+						{/if}
+					</div>
 				</div>
 
 				{#if sortedCalendarIdeas.length === 0}
@@ -1177,5 +1208,21 @@
 		.metrics {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
+	}
+
+	.export-btn {
+		border: 1px solid rgba(15, 23, 42, 0.14);
+		background: rgba(15, 23, 42, 0.04);
+		color: #475569;
+		padding: 0.3rem 0.7rem;
+		border-radius: 0.55rem;
+		font-size: 0.75rem;
+		font-weight: 700;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	.export-btn:hover {
+		background: rgba(15, 23, 42, 0.08);
 	}
 </style>
