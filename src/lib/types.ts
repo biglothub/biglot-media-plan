@@ -1,6 +1,7 @@
 export type SupportedPlatform = 'youtube' | 'facebook' | 'instagram' | 'tiktok';
 export type BacklogContentType = 'video' | 'post' | 'image';
 
+import type { TeamMember } from '$lib/team';
 export type { TeamMember } from '$lib/team';
 
 export interface EnrichMetrics {

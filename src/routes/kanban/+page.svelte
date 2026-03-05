@@ -166,7 +166,7 @@
 		detailDescription = bl?.description ?? '';
 		detailThumbnailUrl = bl?.thumbnail_url ?? '';
 		detailPublishedAt = bl?.published_at ? new Date(bl.published_at).toISOString().slice(0, 16) : '';
-	detailPublishDeadline = item.publish_deadline ?? '';
+		detailPublishDeadline = item.publish_deadline ?? '';
 		detailViews = bl?.view_count ?? null;
 		detailLikes = bl?.like_count ?? null;
 		detailComments = bl?.comment_count ?? null;
@@ -255,9 +255,10 @@
 	onMount(() => {
 		loadCalendar();
 
-		if (!supabase) return;
+		const sb = supabase;
+		if (!sb) return;
 
-		const channel = supabase
+		const channel = sb
 			.channel('kanban-realtime')
 			.on('postgres_changes', { event: '*', schema: 'public', table: 'production_calendar' }, () => {
 				loadCalendar();
@@ -268,7 +269,7 @@
 			.subscribe();
 
 		return () => {
-			supabase.removeChannel(channel);
+			sb.removeChannel(channel);
 		};
 	});
 </script>
