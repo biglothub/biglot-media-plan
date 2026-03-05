@@ -295,6 +295,7 @@
 				saves: draft.metrics.saves,
 			};
 			message = "ดึงข้อมูลสำเร็จแล้ว ตรวจค่า engagement ก่อนบันทึกได้เลย";
+		setTimeout(() => { message = ""; }, 4000);
 		} catch (error) {
 			errorMessage =
 				error instanceof Error
@@ -360,6 +361,7 @@
 		}
 
 		message = "บันทึกเข้า backlog แล้ว";
+		setTimeout(() => { message = ""; }, 4000);
 		scrollToTop();
 		linkInput = "";
 		clearState();
@@ -436,6 +438,7 @@
 		}
 
 		message = "บันทึกไอเดียที่สร้างเองเข้า backlog แล้ว";
+		setTimeout(() => { message = ""; }, 4000);
 		scrollToTop();
 		clearManualState();
 		manualExpanded = false;
@@ -478,6 +481,7 @@
 		}
 
 		message = "ลบออกจาก backlog แล้ว";
+		setTimeout(() => { message = ""; }, 4000);
 		scrollToTop();
 		await Promise.all([loadIdeas(), loadScheduledBacklogIds()]);
 	}

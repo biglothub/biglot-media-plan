@@ -193,6 +193,7 @@
 		}
 
 		message = "อัปเดตตารางถ่ายทำแล้ว";
+		setTimeout(() => { message = ""; }, 4000);
 		scrollToTop();
 		await loadCalendar();
 	}
@@ -231,6 +232,7 @@
 		}
 
 		message = "นำออกจาก calendar แล้ว";
+		setTimeout(() => { message = ""; }, 4000);
 		scrollToTop();
 		await loadCalendar();
 	}

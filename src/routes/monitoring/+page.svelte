@@ -528,6 +528,7 @@
 		contentDescriptionInput = "";
 		selectContent((data as MonitoringContentRow).id);
 		message = "เพิ่ม content สำหรับ monitoring แล้ว";
+		setTimeout(() => { message = ""; }, 4000);
 		scrollToTop();
 	}
 
@@ -577,6 +578,7 @@
 			selectContent(contents[0].id);
 		}
 		message = "ลบ content และคลิปใน content นี้แล้ว";
+		setTimeout(() => { message = ""; }, 4000);
 		scrollToTop();
 	}
 
