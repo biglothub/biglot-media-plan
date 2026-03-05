@@ -1041,6 +1041,7 @@
 
 	.calendar-day {
 		min-height: 170px;
+		max-height: 280px;
 		border: 1px solid rgba(15, 23, 42, 0.09);
 		border-radius: 0.8rem;
 		padding: 0.6rem;
@@ -1049,7 +1050,7 @@
 		gap: 0.45rem;
 		background: rgba(255, 255, 255, 0.88);
 		min-width: 0;
-		overflow: hidden;
+		overflow-y: auto;
 	}
 
 	.calendar-day.outside-month {
