@@ -1,0 +1,137 @@
+{
+  "name": "BigLot Media Plan",
+  "description": "Manage BigLot content ideas, production schedules, and daily summaries.",
+  "baseUrl": "https://biglot-media-plan.vercel.app",
+  "tools": [
+    {
+      "name": "add_content_idea",
+      "description": "Add a new content idea to the backlog. If a URL is provided, metadata (title, thumbnail, metrics) will be auto-enriched from the platform.",
+      "method": "POST",
+      "path": "/api/openclaw/ideas",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "URL of the content (YouTube, Facebook, Instagram, TikTok)"
+          },
+          "platform": {
+            "type": "string",
+            "enum": ["youtube", "facebook", "instagram", "tiktok"]
+          },
+          "content_type": {
+            "type": "string",
+            "enum": ["video", "post", "image"],
+            "default": "video"
+          },
+          "title": { "type": "string" },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "list_content_ideas",
+      "description": "List content ideas from the backlog. Can filter by status and platform.",
+      "method": "GET",
+      "path": "/api/openclaw/ideas",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "description": "Filter by status (new, reviewed, approved, rejected)" },
+          "platform": { "type": "string", "enum": ["youtube", "facebook", "instagram", "tiktok"] },
+          "limit": { "type": "integer", "default": 10 }
+        }
+      }
+    },
+    {
+      "name": "get_content_idea",
+      "description": "Get a single content idea by ID.",
+      "method": "GET",
+      "path": "/api/openclaw/ideas/{idea_id}",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idea_id": { "type": "string", "description": "UUID of the idea" }
+        },
+        "required": ["idea_id"]
+      }
+    },
+    {
+      "name": "update_content_idea",
+      "description": "Update an existing content idea (title, notes, status, description).",
+      "method": "PATCH",
+      "path": "/api/openclaw/ideas/{idea_id}",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idea_id": { "type": "string" },
+          "title": { "type": "string" },
+          "notes": { "type": "string" },
+          "status": { "type": "string" },
+          "description": { "type": "string" }
+        },
+        "required": ["idea_id"]
+      }
+    },
+    {
+      "name": "delete_content_idea",
+      "description": "Delete a content idea from the backlog.",
+      "method": "DELETE",
+      "path": "/api/openclaw/ideas/{idea_id}",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "idea_id": { "type": "string" }
+        },
+        "required": ["idea_id"]
+      }
+    },
+    {
+      "name": "get_schedule",
+      "description": "Get production schedule. Use range=today for today or range=week for next 7 days.",
+      "method": "GET",
+      "path": "/api/openclaw/schedule",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "range": { "type": "string", "enum": ["today", "week"], "default": "today" }
+        }
+      }
+    },
+    {
+      "name": "schedule_shoot",
+      "description": "Schedule a shoot date for a content idea.",
+      "method": "POST",
+      "path": "/api/openclaw/schedule",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "backlog_id": { "type": "string", "description": "UUID of the idea" },
+          "shoot_date": { "type": "string", "description": "YYYY-MM-DD" },
+          "notes": { "type": "string" }
+        },
+        "required": ["backlog_id", "shoot_date"]
+      }
+    },
+    {
+      "name": "update_production_status",
+      "description": "Update production status. Stages: planned -> scripting -> shooting -> editing -> published",
+      "method": "PATCH",
+      "path": "/api/openclaw/schedule/{schedule_id}",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "schedule_id": { "type": "string" },
+          "status": { "type": "string", "enum": ["planned", "scripting", "shooting", "editing", "published"] }
+        },
+        "required": ["schedule_id", "status"]
+      }
+    },
+    {
+      "name": "get_daily_summary",
+      "description": "Get daily summary: new ideas, today's shoots, and in-progress items.",
+      "method": "GET",
+      "path": "/api/openclaw/daily-summary"
+    }
+  ]
+}

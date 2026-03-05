@@ -1,8 +1,1 @@
-{
-  "rewrites": [
-    {
-      "source": "/py-api/(.*)",
-      "destination": "/pyfn/index"
-    }
-  ]
-}
+{}
