@@ -209,7 +209,40 @@ CREATE POLICY public_update_monitoring_metric_snapshots ON public.monitoring_met
 CREATE POLICY public_delete_monitoring_metric_snapshots ON public.monitoring_metric_snapshots FOR DELETE TO public USING (true);
 
 -- ============================================================
--- 7. calendar_assignments
+-- 7. monitoring_channel_videos
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.monitoring_channel_videos (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  platform_id     uuid NOT NULL REFERENCES public.monitoring_content_platform (id) ON DELETE CASCADE,
+  video_id        text NOT NULL,
+  video_url       text NOT NULL,
+  title           text NOT NULL,
+  thumbnail_url   text,
+  published_label text,
+  view_label      text,
+  view_count      bigint,
+  duration_label  text,
+  raw_json        jsonb,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_monitoring_channel_videos_platform_video
+  ON public.monitoring_channel_videos (platform_id, video_id);
+CREATE INDEX IF NOT EXISTS idx_monitoring_channel_videos_platform
+  ON public.monitoring_channel_videos (platform_id);
+CREATE INDEX IF NOT EXISTS idx_monitoring_channel_videos_updated
+  ON public.monitoring_channel_videos (updated_at DESC);
+
+ALTER TABLE public.monitoring_channel_videos ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY public_read_monitoring_channel_videos   ON public.monitoring_channel_videos FOR SELECT TO public USING (true);
+CREATE POLICY public_insert_monitoring_channel_videos ON public.monitoring_channel_videos FOR INSERT TO public WITH CHECK (true);
+CREATE POLICY public_update_monitoring_channel_videos ON public.monitoring_channel_videos FOR UPDATE TO public USING (true) WITH CHECK (true);
+CREATE POLICY public_delete_monitoring_channel_videos ON public.monitoring_channel_videos FOR DELETE TO public USING (true);
+
+-- ============================================================
+-- 8. calendar_assignments
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.calendar_assignments (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),

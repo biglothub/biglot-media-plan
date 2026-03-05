@@ -134,3 +134,19 @@ export interface MonitoringMetricSnapshotRow {
 	notes: string | null;
 	created_at: string;
 }
+
+export interface MonitoringChannelVideoRow {
+	id: string;
+	platform_id: string;
+	video_id: string;
+	video_url: string;
+	title: string;
+	thumbnail_url: string | null;
+	published_label: string | null;
+	view_label: string | null;
+	view_count: number | null;
+	duration_label: string | null;
+	raw_json: Record<string, unknown> | null;
+	created_at: string;
+	updated_at: string;
+}

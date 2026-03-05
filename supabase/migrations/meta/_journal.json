@@ -85,6 +85,13 @@
       "when": 1772578860000,
       "tag": "0011_monitoring_channel_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1772581200000,
+      "tag": "0012_monitoring_channel_videos",
+      "breakpoints": true
     }
   ]
 }
