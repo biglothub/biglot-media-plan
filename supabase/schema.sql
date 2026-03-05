@@ -118,6 +118,9 @@ CREATE TABLE IF NOT EXISTS public.monitoring_content (
   ),
   title         text NOT NULL,
   description   text,
+  owner         text,
+  priority      text NOT NULL DEFAULT 'normal'
+    CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
   notes         text,
   status        text NOT NULL DEFAULT 'active',
   created_at    timestamptz NOT NULL DEFAULT now()
@@ -144,6 +147,8 @@ CREATE TABLE IF NOT EXISTS public.monitoring_content_platform (
   url           text NOT NULL,
   platform      text NOT NULL
     CHECK (platform IN ('youtube', 'facebook', 'instagram', 'tiktok')),
+  is_channel    boolean NOT NULL DEFAULT true,
+  last_checked_at timestamptz,
   title         text,
   thumbnail_url text,
   published_at  timestamptz,
@@ -171,7 +176,40 @@ CREATE POLICY public_update_monitoring_content_platform ON public.monitoring_con
 CREATE POLICY public_delete_monitoring_content_platform ON public.monitoring_content_platform FOR DELETE TO public USING (true);
 
 -- ============================================================
--- 6. calendar_assignments
+-- 6. monitoring_metric_snapshots
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.monitoring_metric_snapshots (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  content_id      uuid NOT NULL REFERENCES public.monitoring_content (id) ON DELETE CASCADE,
+  platform_id     uuid NOT NULL REFERENCES public.monitoring_content_platform (id) ON DELETE CASCADE,
+  snapshot_date   date NOT NULL DEFAULT timezone('utc', now())::date,
+  followers_count bigint,
+  view_count      bigint,
+  post_count      bigint,
+  like_count      bigint,
+  comment_count   bigint,
+  share_count     bigint,
+  save_count      bigint,
+  notes           text,
+  created_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_monitoring_metric_snapshots_daily
+  ON public.monitoring_metric_snapshots (platform_id, snapshot_date);
+CREATE INDEX IF NOT EXISTS idx_monitoring_metric_snapshots_platform_date
+  ON public.monitoring_metric_snapshots (platform_id, snapshot_date DESC);
+CREATE INDEX IF NOT EXISTS idx_monitoring_metric_snapshots_content_date
+  ON public.monitoring_metric_snapshots (content_id, snapshot_date DESC);
+
+ALTER TABLE public.monitoring_metric_snapshots ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY public_read_monitoring_metric_snapshots   ON public.monitoring_metric_snapshots FOR SELECT TO public USING (true);
+CREATE POLICY public_insert_monitoring_metric_snapshots ON public.monitoring_metric_snapshots FOR INSERT TO public WITH CHECK (true);
+CREATE POLICY public_update_monitoring_metric_snapshots ON public.monitoring_metric_snapshots FOR UPDATE TO public USING (true) WITH CHECK (true);
+CREATE POLICY public_delete_monitoring_metric_snapshots ON public.monitoring_metric_snapshots FOR DELETE TO public USING (true);
+
+-- ============================================================
+-- 7. calendar_assignments
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.calendar_assignments (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),

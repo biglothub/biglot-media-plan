@@ -91,20 +91,42 @@ export interface MonitoringContentRow {
 	content_code: string;
 	title: string;
 	description: string | null;
+	owner: string | null;
+	priority: MonitoringPriority;
 	notes: string | null;
 	status: string;
 	created_at: string;
 }
+
+export type MonitoringPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 export interface MonitoringContentPlatformRow {
 	id: string;
 	content_id: string;
 	url: string;
 	platform: SupportedPlatform;
+	is_channel: boolean;
+	last_checked_at: string | null;
 	title: string | null;
 	thumbnail_url: string | null;
 	published_at: string | null;
 	view_count: number | null;
+	like_count: number | null;
+	comment_count: number | null;
+	share_count: number | null;
+	save_count: number | null;
+	notes: string | null;
+	created_at: string;
+}
+
+export interface MonitoringMetricSnapshotRow {
+	id: string;
+	content_id: string;
+	platform_id: string;
+	snapshot_date: string;
+	followers_count: number | null;
+	view_count: number | null;
+	post_count: number | null;
 	like_count: number | null;
 	comment_count: number | null;
 	share_count: number | null;
