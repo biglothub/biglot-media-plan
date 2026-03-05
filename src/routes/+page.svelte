@@ -986,11 +986,18 @@
 													]}</span
 												>
 											</div>
-											{#if scheduledBacklogIds.has(idea.id)}
-												<span class="chip"
-													>Scheduled</span
-												>
-											{/if}
+											<div class="head-row-right">
+												{#if scheduledBacklogIds.has(idea.id)}
+													<span class="chip"
+														>Scheduled</span
+													>
+												{/if}
+												<button
+													class="dot-menu-btn"
+													onclick={(e) => { e.stopPropagation(); openContextMenu(e, idea); }}
+													title="More options"
+												>⋮</button>
+											</div>
 										</div>
 										<h3>{backlogCode(idea)}</h3>
 										<p class="idea-title">
@@ -1558,7 +1565,24 @@
 		color: #94a3b8;
 	}
 
+	.card-actions {
+		display: flex;
+		gap: 0.4rem;
+	}
+
+	.edit-btn {
+		flex: 1;
+		border: 1px solid rgba(37, 99, 235, 0.24);
+		background: rgba(37, 99, 235, 0.08);
+		color: #1d4ed8;
+		padding: 0.45rem 0.6rem;
+		border-radius: 0.6rem;
+		font-weight: 700;
+		cursor: pointer;
+	}
+
 	.danger {
+		flex: 1;
 		border: 1px solid rgba(220, 38, 38, 0.24);
 		background: rgba(220, 38, 38, 0.08);
 		color: #b91c1c;
@@ -1662,6 +1686,113 @@
 		cursor: pointer;
 	}
 
+	/* Edit Modal */
+	.modal-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 999;
+		background: rgba(0, 0, 0, 0.45);
+	}
+
+	.modal-box {
+		position: fixed;
+		inset: 0;
+		z-index: 1000;
+		margin: auto;
+		width: 100%;
+		max-width: 560px;
+		max-height: 90vh;
+		overflow-y: auto;
+		background: #fff;
+		border-radius: 1rem;
+		padding: 1.5rem;
+		display: grid;
+		gap: 0.85rem;
+		align-content: start;
+	}
+
+	.modal-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 0.5rem;
+	}
+
+	.modal-header h3 {
+		margin: 0;
+		font-size: 1.05rem;
+		font-family: 'Space Grotesk', 'Noto Sans Thai', sans-serif;
+	}
+
+	.modal-close {
+		border: 0;
+		background: transparent;
+		font-size: 1rem;
+		color: #64748b;
+		cursor: pointer;
+		padding: 0.15rem 0.3rem;
+		border-radius: 0.4rem;
+	}
+
+	.modal-close:hover {
+		background: rgba(15, 23, 42, 0.08);
+	}
+
+	.edit-row {
+		display: grid;
+		gap: 0.4rem;
+	}
+
+	.edit-row-inline {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.75rem;
+	}
+
+	.edit-metrics {
+		display: grid;
+		grid-template-columns: repeat(5, minmax(0, 1fr));
+		gap: 0.5rem;
+	}
+
+	.edit-metric {
+		padding: 0.55rem;
+		border-radius: 0.7rem;
+		background: rgba(15, 23, 42, 0.04);
+		border: 1px solid rgba(15, 23, 42, 0.08);
+	}
+
+	.edit-metric input {
+		border: 0;
+		background: transparent;
+		padding: 0;
+		font-weight: 700;
+		width: 100%;
+		font-size: 0.95rem;
+		font-family: inherit;
+	}
+
+	.edit-metric label {
+		font-size: 0.73rem;
+	}
+
+	.modal-footer {
+		display: flex;
+		gap: 0.5rem;
+		justify-content: flex-end;
+		padding-top: 0.3rem;
+	}
+
+	.modal-cancel {
+		border: 1px solid rgba(15, 23, 42, 0.14);
+		background: #fff;
+		color: #475569;
+		padding: 0.6rem 1rem;
+		border-radius: 0.68rem;
+		font-weight: 700;
+		cursor: pointer;
+	}
+
 	@media (max-width: 900px) {
 		.preview {
 			grid-template-columns: 1fr;
@@ -1673,6 +1804,19 @@
 
 		.row-inline {
 			grid-template-columns: 1fr;
+		}
+
+		.edit-row-inline {
+			grid-template-columns: 1fr;
+		}
+
+		.edit-metrics {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+
+		.modal-box {
+			max-height: 95vh;
+			border-radius: 0.75rem;
 		}
 	}
 </style>
