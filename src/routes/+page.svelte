@@ -952,15 +952,6 @@
 						allow="encrypted-media; picture-in-picture"
 						allowfullscreen
 					></iframe>
-				{:else if draftInstagramEmbedUrl}
-					<iframe
-						class="preview-media instagram-frame"
-						src={draftInstagramEmbedUrl}
-						title="Instagram Preview"
-						loading="lazy"
-						allow="encrypted-media; picture-in-picture"
-						allowfullscreen
-					></iframe>
 				{:else if draftYouTubeEmbedUrl}
 					<iframe
 						class="preview-media youtube-frame"
@@ -976,6 +967,15 @@
 						src={draft.thumbnailUrl}
 						alt={draft.title ?? "thumbnail"}
 					/>
+				{:else if draftInstagramEmbedUrl}
+					<iframe
+						class="preview-media instagram-frame"
+						src={draftInstagramEmbedUrl}
+						title="Instagram Preview"
+						loading="lazy"
+						allow="encrypted-media; picture-in-picture"
+						allowfullscreen
+					></iframe>
 				{/if}
 				<div>
 					<div class="chip-row">

@@ -165,10 +165,10 @@ export function getInstagramEmbedUrl(videoUrl: string): string | null {
 		const hostname = parsed.hostname.toLowerCase();
 		if (!hostname.includes('instagram.com')) return null;
 
-		const match = parsed.pathname.match(/\/(p|reel|tv)\/([^/?#]+)/);
+		const match = parsed.pathname.match(/\/(p|reels?|tv)\/([^/?#]+)/);
 		if (!match) return null;
 
-		const type = match[1];
+		const type = match[1] === 'reels' ? 'reel' : match[1];
 		const shortcode = match[2];
 		return `https://www.instagram.com/${type}/${shortcode}/embed/captioned`;
 	} catch {
