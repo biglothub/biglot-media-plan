@@ -4,12 +4,17 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { hasSupabaseConfig, supabase } from "$lib/supabase";
+	import { TEAM_MEMBERS } from '$lib/team';
 	import type {
+		ApprovalStatus,
 		BacklogContentCategory,
 		BacklogContentType,
 		EnrichResult,
 		IdeaBacklogRow,
+		ProductionCalendarRow,
+		ProductionStage,
 		SupportedPlatform,
+		TeamMember
 	} from "$lib/types";
 	import {
 		contentCategoryLabel,
@@ -22,6 +27,7 @@
 		platformOrder,
 		PRODUCTION_STAGES,
 		stageLabel,
+		toIsoLocalDate,
 	} from "$lib/media-plan";
 
 	const CONTENT_CATEGORY_ORDER = ["pin", "hero", "hub", "help"] as const satisfies readonly BacklogContentCategory[];
@@ -61,7 +67,7 @@
 	let errorMessage = $state("");
 	let draft = $state<EnrichResult | null>(null);
 	let ideas = $state<IdeaBacklogRow[]>([]);
-	let scheduledCalendarMap = $state<Map<string, { id: string; shoot_date: string; status: string }>>(new Map());
+	let scheduledCalendarMap = $state<Map<string, ProductionCalendarRow>>(new Map());
 	const scheduledBacklogIds = $derived(new Set(scheduledCalendarMap.keys()));
 	const publishedBacklogIds = $derived(
 		new Set([...scheduledCalendarMap.entries()]
@@ -164,12 +170,18 @@
 		published_at: '',
 		notes: '',
 		shoot_date: '',
-		views: null as number | null,
-		likes: null as number | null,
-		comments: null as number | null,
-		shares: null as number | null,
-		saves: null as number | null,
+		publish_deadline: '',
+		calendar_status: 'planned' as ProductionStage,
+		approval_status: 'draft' as ApprovalStatus,
+		revision_count: 0,
+		calendar_notes: '',
 	});
+	function createEmptyAssignmentDraft(): Record<TeamMember, { enabled: boolean; role_detail: string }> {
+		return Object.fromEntries(
+			TEAM_MEMBERS.map((member) => [member, { enabled: false, role_detail: '' }]),
+		) as Record<TeamMember, { enabled: boolean; role_detail: string }>;
+	}
+	let assignmentDraft = $state<Record<TeamMember, { enabled: boolean; role_detail: string }>>(createEmptyAssignmentDraft());
 	let notesViewMode = $state<'edit' | 'preview'>('edit');
 	const notesRendered = $derived(editForm.notes ? marked.parse(editForm.notes) as string : '');
 	let savingEdit = $state(false);
@@ -351,17 +363,23 @@
 
 		const { data, error } = await supabase
 			.from("production_calendar")
-			.select("id, backlog_id, shoot_date, status");
+			.select("id, backlog_id, shoot_date, publish_deadline, status, revision_count, approval_status, submitted_at, notes, created_at, calendar_assignments(*)");
 		if (error) {
 			errorMessage = `โหลดสถานะ schedule ไม่ได้: ${error.message}`;
 			return;
 		}
 
 		scheduledCalendarMap = new Map(
-			(data ?? []).map((item) => [
-				item.backlog_id as string,
-				{ id: item.id as string, shoot_date: item.shoot_date as string, status: item.status as string },
-			]),
+			(data ?? []).map((item) => {
+				const row = item as Record<string, unknown>;
+				return [
+					row.backlog_id as string,
+					{
+						...row,
+						calendar_assignments: Array.isArray(row.calendar_assignments) ? row.calendar_assignments : [],
+					} as ProductionCalendarRow,
+				];
+			}),
 		);
 	}
 
@@ -713,12 +731,19 @@
 				: '',
 			notes: idea.notes ?? '',
 			shoot_date: calEntry?.shoot_date ?? '',
-			views: idea.view_count,
-			likes: idea.like_count,
-			comments: idea.comment_count,
-			shares: idea.share_count,
-			saves: idea.save_count,
+			publish_deadline: calEntry?.publish_deadline ?? '',
+			calendar_status: (calEntry?.status as ProductionStage) ?? 'planned',
+			approval_status: (calEntry?.approval_status as ApprovalStatus) ?? 'draft',
+			revision_count: calEntry?.revision_count ?? 0,
+			calendar_notes: calEntry?.notes ?? '',
 		};
+		assignmentDraft = createEmptyAssignmentDraft();
+		for (const assignment of calEntry?.calendar_assignments ?? []) {
+			assignmentDraft[assignment.member_name] = {
+				enabled: true,
+				role_detail: assignment.role_detail ?? '',
+			};
+		}
 		if (syncUrl) {
 			await goto(buildEditUrl(idea.id), { replaceState: true, noScroll: true, keepFocus: true });
 		}
@@ -726,6 +751,7 @@
 
 	async function closeEditModal() {
 		editingIdea = null;
+		assignmentDraft = createEmptyAssignmentDraft();
 		await goto(buildEditUrl(null), { replaceState: true, noScroll: true, keepFocus: true });
 	}
 
@@ -763,11 +789,6 @@
 			published_at: editForm.published_at
 				? new Date(editForm.published_at).toISOString()
 				: null,
-			view_count: editForm.views,
-			like_count: editForm.likes,
-			comment_count: editForm.comments,
-			share_count: editForm.shares,
-			save_count: editForm.saves,
 			notes: editForm.notes.trim() || null,
 		};
 
@@ -782,24 +803,78 @@
 			return;
 		}
 
-		if (editForm.shoot_date) {
-			const { error: calError } = await supabase
+		const hasAssignments = TEAM_MEMBERS.some((member) => assignmentDraft[member].enabled);
+		const shouldPersistCalendar =
+			!!editForm.shoot_date ||
+			!!editForm.publish_deadline ||
+			!!editForm.calendar_notes.trim() ||
+			hasAssignments ||
+			editForm.calendar_status !== 'planned' ||
+			editForm.approval_status !== 'draft' ||
+			editForm.revision_count > 0 ||
+			scheduledCalendarMap.has(editingIdea.id);
+
+		let calendarId = scheduledCalendarMap.get(editingIdea.id)?.id ?? null;
+		if (shouldPersistCalendar) {
+			const { data: calendarRow, error: calError } = await supabase
 				.from('production_calendar')
 				.upsert(
-					{ backlog_id: editingIdea.id, shoot_date: editForm.shoot_date, status: 'planned' },
+					{
+						backlog_id: editingIdea.id,
+						shoot_date: editForm.shoot_date || scheduledCalendarMap.get(editingIdea.id)?.shoot_date || toIsoLocalDate(new Date()),
+						publish_deadline: editForm.publish_deadline || null,
+						status: editForm.calendar_status,
+						approval_status: editForm.approval_status,
+						revision_count: editForm.revision_count,
+						notes: editForm.calendar_notes.trim() || null,
+					},
 					{ onConflict: 'backlog_id' },
-				);
+				)
+				.select('id')
+				.single();
 			if (calError) {
 				savingEdit = false;
-				errorMessage = `แก้ไข backlog สำเร็จ แต่บันทึก shoot date ไม่ได้: ${calError.message}`;
+				errorMessage = `แก้ไข backlog สำเร็จ แต่บันทึก calendar ไม่ได้: ${calError.message}`;
 				return;
+			}
+			calendarId = calendarRow.id;
+		}
+
+		if (calendarId) {
+			const { error: deleteAssignmentsError } = await supabase
+				.from('calendar_assignments')
+				.delete()
+				.eq('calendar_id', calendarId);
+			if (deleteAssignmentsError) {
+				savingEdit = false;
+				errorMessage = `บันทึก backlog สำเร็จ แต่ล้าง team assignments ไม่ได้: ${deleteAssignmentsError.message}`;
+				return;
+			}
+
+			const assignments = TEAM_MEMBERS
+				.filter((member) => assignmentDraft[member].enabled)
+				.map((member) => ({
+					calendar_id: calendarId,
+					member_name: member,
+					role_detail: assignmentDraft[member].role_detail.trim(),
+				}));
+
+			if (assignments.length > 0) {
+				const { error: assignmentError } = await supabase
+					.from('calendar_assignments')
+					.insert(assignments);
+				if (assignmentError) {
+					savingEdit = false;
+					errorMessage = `บันทึก backlog สำเร็จ แต่บันทึก team assignments ไม่ได้: ${assignmentError.message}`;
+					return;
+				}
 			}
 		}
 
 		savingEdit = false;
 		message = 'แก้ไข backlog เรียบร้อยแล้ว';
 		setTimeout(() => { message = ''; }, 4000);
-		closeEditModal();
+		await closeEditModal();
 		await Promise.all([loadIdeas(), loadScheduledBacklogIds()]);
 	}
 
@@ -958,6 +1033,7 @@
 		if (page.url.searchParams.get('edit')) return;
 		if (!editingIdea) return;
 		editingIdea = null;
+		assignmentDraft = createEmptyAssignmentDraft();
 	});
 </script>
 
@@ -1670,6 +1746,37 @@
 					<input id="edit-shoot-date" type="date" bind:value={editForm.shoot_date} />
 				</div>
 				<div class="edit-row">
+					<label for="edit-publish-deadline">Publish Deadline</label>
+					<input id="edit-publish-deadline" type="date" bind:value={editForm.publish_deadline} />
+				</div>
+			</div>
+
+			<div class="edit-row-inline">
+				<div class="edit-row">
+					<label for="edit-calendar-status">Production Stage</label>
+					<select id="edit-calendar-status" bind:value={editForm.calendar_status}>
+						{#each PRODUCTION_STAGES as stage}
+							<option value={stage}>{stageLabel[stage]}</option>
+						{/each}
+					</select>
+				</div>
+				<div class="edit-row">
+					<label for="edit-approval-status">Approval Status</label>
+					<select id="edit-approval-status" bind:value={editForm.approval_status}>
+						<option value="draft">Draft</option>
+						<option value="pending_review">รออนุมัติ</option>
+						<option value="approved">อนุมัติแล้ว</option>
+						<option value="rejected">Rejected</option>
+					</select>
+				</div>
+			</div>
+
+			<div class="edit-row-inline">
+				<div class="edit-row">
+					<label for="edit-revision-count">Revision Count</label>
+					<input id="edit-revision-count" type="number" min="0" max="99" bind:value={editForm.revision_count} />
+				</div>
+				<div class="edit-row">
 					<label for="edit-published">Published At</label>
 					<input id="edit-published" type="datetime-local" bind:value={editForm.published_at} />
 				</div>
@@ -1690,6 +1797,40 @@
 				<textarea id="edit-description" bind:value={editForm.description} rows={3} placeholder="คำอธิบาย (ถ้ามี)"></textarea>
 			</div>
 
+			<div class="edit-row">
+				<div class="notes-label-row">
+					<p class="field-group-label">Team Assignments</p>
+					<small class="section-helper">ข้อมูลจาก calendar ของไอเดียนี้</small>
+				</div>
+				<div class="assignment-list">
+					{#each TEAM_MEMBERS as member}
+						<div class="assignment-row">
+							<label class="member-toggle">
+								<input type="checkbox" bind:checked={assignmentDraft[member].enabled} />
+								<span class="member-name">{member}</span>
+							</label>
+							{#if assignmentDraft[member].enabled}
+								<input
+									type="text"
+									class="role-input"
+									placeholder="รายละเอียดหน้าที่..."
+									bind:value={assignmentDraft[member].role_detail}
+								/>
+							{/if}
+						</div>
+					{/each}
+				</div>
+			</div>
+
+			<div class="edit-row">
+				<label for="edit-calendar-notes">Calendar Notes</label>
+				<textarea
+					id="edit-calendar-notes"
+					bind:value={editForm.calendar_notes}
+					rows={3}
+					placeholder="รายละเอียดฝั่ง production / shoot / deadline"
+				></textarea>
+			</div>
 
 			<div class="edit-row">
 				<div class="notes-label-row">
@@ -2425,37 +2566,63 @@
 		min-height: 0;
 	}
 
+	.field-group-label {
+		margin: 0;
+		font-size: 0.86rem;
+		color: #475569;
+		font-weight: 600;
+	}
+
 	.edit-row-inline {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 0.75rem;
 	}
 
-	.edit-metrics {
+	.section-helper {
+		font-size: 0.74rem;
+		color: #64748b;
+	}
+
+	.assignment-list {
 		display: grid;
-		grid-template-columns: repeat(5, minmax(0, 1fr));
-		gap: 0.5rem;
+		gap: 0.65rem;
 	}
 
-	.edit-metric {
+	.assignment-row {
+		display: grid;
+		gap: 0.35rem;
 		padding: 0.55rem;
+		border: 1px solid rgba(15, 23, 42, 0.09);
 		border-radius: 0.7rem;
-		background: rgba(15, 23, 42, 0.04);
-		border: 1px solid rgba(15, 23, 42, 0.08);
 	}
 
-	.edit-metric input {
-		border: 0;
-		background: transparent;
-		padding: 0;
+	.member-toggle {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		cursor: pointer;
+	}
+
+	.member-name {
 		font-weight: 700;
-		width: 100%;
-		font-size: 0.95rem;
-		font-family: inherit;
+		font-size: 0.9rem;
 	}
 
-	.edit-metric label {
-		font-size: 0.73rem;
+	.role-input {
+		width: 100%;
+		padding: 0.4rem 0.6rem;
+		border: 1px solid rgba(15, 23, 42, 0.15);
+		border-radius: 0.55rem;
+		font-size: 0.85rem;
+		font-family: inherit;
+		box-sizing: border-box;
+	}
+
+	.role-input:focus {
+		outline: none;
+		border-color: #2563eb;
+		box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
 	}
 
 	.modal-footer {
@@ -2588,10 +2755,6 @@
 			grid-template-columns: 1fr;
 		}
 
-		.edit-metrics {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-
 		.modal-box {
 			top: 0.75rem;
 			width: min(560px, calc(100vw - 1.5rem));
@@ -2617,8 +2780,7 @@
 			grid-template-columns: 1fr;
 		}
 
-		.metrics,
-		.edit-metrics {
+		.metrics {
 			grid-template-columns: 1fr;
 		}
 
