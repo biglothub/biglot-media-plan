@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from "svelte";
+	import { Button, Spinner, PageHeader, Badge, Modal, toast, IdeaCard, StatsCard, FormField } from '$lib';
 	import { marked } from "marked";
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -63,8 +64,6 @@
 	let enriching = $state(false);
 	let saving = $state(false);
 	let deletingId = $state<string | null>(null);
-	let message = $state("");
-	let errorMessage = $state("");
 	let draft = $state<EnrichResult | null>(null);
 	let ideas = $state<IdeaBacklogRow[]>([]);
 	let scheduledCalendarMap = $state<Map<string, ProductionCalendarRow>>(new Map());
@@ -341,7 +340,6 @@
 	async function loadIdeas() {
 		if (!supabase) return;
 		loadingIdeas = true;
-		errorMessage = "";
 
 		const { data, error } = await supabase
 			.from("idea_backlog")
@@ -351,7 +349,7 @@
 		loadingIdeas = false;
 
 		if (error) {
-			errorMessage = `โหลด backlog ไม่ได้: ${error.message}`;
+			toast.error(`โหลด backlog ไม่ได้: ${error.message}`);
 			return;
 		}
 
@@ -365,7 +363,7 @@
 			.from("production_calendar")
 			.select("id, backlog_id, shoot_date, publish_deadline, status, revision_count, approval_status, submitted_at, notes, created_at, calendar_assignments(*)");
 		if (error) {
-			errorMessage = `โหลดสถานะ schedule ไม่ได้: ${error.message}`;
+			toast.error(`โหลดสถานะ schedule ไม่ได้: ${error.message}`);
 			return;
 		}
 
@@ -384,12 +382,10 @@
 	}
 
 	async function analyzeLink() {
-		message = "";
-		errorMessage = "";
 		clearState();
 
 		if (!linkInput.trim()) {
-			errorMessage = "กรุณาวางลิงก์ก่อน";
+			toast.error("กรุณาวางลิงก์ก่อน");
 			return;
 		}
 
@@ -401,7 +397,7 @@
 			const body = await response.json();
 
 			if (!response.ok) {
-				errorMessage = body.error ?? "อ่านข้อมูลจากลิงก์ไม่สำเร็จ";
+				toast.error(body.error ?? "อ่านข้อมูลจากลิงก์ไม่สำเร็จ");
 				return;
 			}
 
@@ -414,8 +410,7 @@
 				shares: draft.metrics.shares,
 				saves: draft.metrics.saves,
 			};
-			message = "ดึงข้อมูลสำเร็จแล้ว ตรวจค่า engagement ก่อนบันทึกได้เลย";
-			setTimeout(() => { message = ""; }, 4000);
+			toast.success("ดึงข้อมูลสำเร็จแล้ว ตรวจค่า engagement ก่อนบันทึกได้เลย");
 
 			// Auto-categorize in background (fire-and-forget, ไม่ block UI)
 			suggestedCategory = null;
@@ -435,10 +430,7 @@
 				}
 			}).catch(() => { /* silent fail */ });
 		} catch (error) {
-			errorMessage =
-				error instanceof Error
-					? error.message
-					: "เกิดข้อผิดพลาดระหว่าง analyze link";
+			toast.error(error instanceof Error ? error.message : "เกิดข้อผิดพลาดระหว่าง analyze link");
 		} finally {
 			enriching = false;
 		}
@@ -446,22 +438,20 @@
 
 	async function saveIdea() {
 		if (!supabase) {
-			errorMessage = "ยังไม่ได้ตั้งค่า Supabase";
+			toast.error("ยังไม่ได้ตั้งค่า Supabase");
 			return;
 		}
 
 		if (!draft) {
-			errorMessage = "ยังไม่มีข้อมูลจากการ analyze ลิงก์";
+			toast.error("ยังไม่มีข้อมูลจากการ analyze ลิงก์");
 			return;
 		}
 
 		saving = true;
-		errorMessage = "";
-		message = "";
 
 		const existingIdea = ideas.find((i) => i.url && i.url === draft?.url);
 		if (existingIdea) {
-			errorMessage = `ไอเดียลิงก์นี้มีอยู่ในระบบแล้ว (${backlogCode(existingIdea)})`;
+			toast.error(`ไอเดียลิงก์นี้มีอยู่ในระบบแล้ว (${backlogCode(existingIdea)})`);
 			scrollToTop();
 			saving = false;
 			return;
@@ -494,13 +484,12 @@
 		saving = false;
 
 		if (error) {
-			errorMessage = `บันทึกไม่สำเร็จ: ${error.message}`;
+			toast.error(`บันทึกไม่สำเร็จ: ${error.message}`);
 			scrollToTop();
 			return;
 		}
 
-		message = "บันทึกเข้า backlog แล้ว";
-		setTimeout(() => { message = ""; }, 4000);
+		toast.success("บันทึกเข้า backlog แล้ว");
 		scrollToTop();
 		linkInput = "";
 		clearState();
@@ -509,7 +498,7 @@
 
 	async function saveManualIdea() {
 		if (!supabase) {
-			errorMessage = "ยังไม่ได้ตั้งค่า Supabase";
+			toast.error("ยังไม่ได้ตั้งค่า Supabase");
 			return;
 		}
 
@@ -520,25 +509,23 @@
 			try {
 				const parsed = new URL(normalizedUrl);
 				if (!["http:", "https:"].includes(parsed.protocol)) {
-					errorMessage = "ลิงก์ต้องเป็น http/https เท่านั้น";
+					toast.error("ลิงก์ต้องเป็น http/https เท่านั้น");
 					return;
 				}
 			} catch {
-				errorMessage = "ลิงก์ไม่ถูกต้อง";
+				toast.error("ลิงก์ไม่ถูกต้อง");
 				return;
 			}
 		}
 
 		saving = true;
-		errorMessage = "";
-		message = "";
 
 		if (normalizedUrl) {
 			const existingIdea = ideas.find(
 				(i) => i.url && i.url === normalizedUrl,
 			);
 			if (existingIdea) {
-				errorMessage = `ไอเดียลิงก์นี้มีอยู่ในระบบแล้ว (${backlogCode(existingIdea)})`;
+				toast.error(`ไอเดียลิงก์นี้มีอยู่ในระบบแล้ว (${backlogCode(existingIdea)})`);
 				scrollToTop();
 				saving = false;
 				return;
@@ -572,13 +559,12 @@
 		saving = false;
 
 		if (error) {
-			errorMessage = `บันทึกไม่สำเร็จ: ${error.message}`;
+			toast.error(`บันทึกไม่สำเร็จ: ${error.message}`);
 			scrollToTop();
 			return;
 		}
 
-		message = "บันทึกไอเดียที่สร้างเองเข้า backlog แล้ว";
-		setTimeout(() => { message = ""; }, 4000);
+		toast.success("บันทึกไอเดียที่สร้างเองเข้า backlog แล้ว");
 		scrollToTop();
 		clearManualState();
 		manualExpanded = false;
@@ -587,7 +573,7 @@
 
 	async function deleteIdea(idea: IdeaBacklogRow) {
 		if (!supabase) {
-			errorMessage = "ยังไม่ได้ตั้งค่า Supabase";
+			toast.error("ยังไม่ได้ตั้งค่า Supabase");
 			return;
 		}
 
@@ -597,8 +583,6 @@
 		if (!confirmed) return;
 
 		deletingId = idea.id;
-		errorMessage = "";
-		message = "";
 
 		const { data, error } = await supabase
 			.from("idea_backlog")
@@ -608,20 +592,19 @@
 		deletingId = null;
 
 		if (error) {
-			errorMessage = `ลบไม่สำเร็จ: ${error.message}`;
+			toast.error(`ลบไม่สำเร็จ: ${error.message}`);
 			scrollToTop();
 			return;
 		}
 
 		if (!data || data.length === 0) {
-			errorMessage = `ลบไม่สำเร็จ: ระบบไม่ได้รับอนุญาตให้ลบรายการนี้ (RLS policy blocked)`;
+			toast.error(`ลบไม่สำเร็จ: ระบบไม่ได้รับอนุญาตให้ลบรายการนี้ (RLS policy blocked)`);
 			scrollToTop();
 			await loadIdeas();
 			return;
 		}
 
-		message = "ลบออกจาก backlog แล้ว";
-		setTimeout(() => { message = ""; }, 4000);
+		toast.success("ลบออกจาก backlog แล้ว");
 		scrollToTop();
 		await Promise.all([loadIdeas(), loadScheduledBacklogIds()]);
 	}
@@ -659,7 +642,6 @@
 	async function scheduleToCalendar() {
 		if (!supabase || !contextMenuIdea || !scheduleDate) return;
 		scheduling = true;
-		errorMessage = "";
 
 		const { error } = await supabase.from("production_calendar").upsert(
 			{
@@ -674,25 +656,22 @@
 		closeContextMenu();
 
 		if (error) {
-			errorMessage = `วางแผนใน calendar ไม่สำเร็จ: ${error.message}`;
+			toast.error(`วางแผนใน calendar ไม่สำเร็จ: ${error.message}`);
 			scrollToTop();
 			return;
 		}
 
-		message = `${backlogCode(contextMenuIdea)} ถูกจัดลงตาราง ${scheduleDate} แล้ว`;
-		setTimeout(() => { message = ''; }, 4000);
+		toast.success(`${backlogCode(contextMenuIdea)} ถูกจัดลงตาราง ${scheduleDate} แล้ว`);
 		scrollToTop();
 		await loadScheduledBacklogIds();
 	}
 
 	async function togglePinnedState(idea: IdeaBacklogRow) {
 		if (!supabase) {
-			errorMessage = "ยังไม่ได้ตั้งค่า Supabase";
+			toast.error("ยังไม่ได้ตั้งค่า Supabase");
 			return;
 		}
 
-		errorMessage = "";
-		message = "";
 		const nextCategory = idea.content_category === "pin" ? null : "pin";
 		const { error } = await supabase
 			.from("idea_backlog")
@@ -700,15 +679,14 @@
 			.eq("id", idea.id);
 
 		if (error) {
-			errorMessage = `อัปเดต category ไม่สำเร็จ: ${error.message}`;
+			toast.error(`อัปเดต category ไม่สำเร็จ: ${error.message}`);
 			scrollToTop();
 			return;
 		}
 
-		message = nextCategory === "pin"
+		toast.success(nextCategory === "pin"
 			? `${backlogCode(idea)} ถูก pin แล้ว`
-			: `${backlogCode(idea)} ถูกเอาออกจาก pin แล้ว`;
-		setTimeout(() => { message = ""; }, 4000);
+			: `${backlogCode(idea)} ถูกเอาออกจาก pin แล้ว`);
 		if (contextMenuIdea?.id === idea.id) closeContextMenu();
 		await loadIdeas();
 	}
@@ -758,20 +736,17 @@
 	async function saveEdit() {
 		if (!supabase || !editingIdea) return;
 		savingEdit = true;
-		errorMessage = '';
-		message = '';
-
 		const rawUrl = editForm.url.trim();
 		if (rawUrl) {
 			try {
 				const parsed = new URL(rawUrl);
 				if (!['http:', 'https:'].includes(parsed.protocol)) {
-					errorMessage = 'ลิงก์ต้องเป็น http/https เท่านั้น';
+					toast.error('ลิงก์ต้องเป็น http/https เท่านั้น');
 					savingEdit = false;
 					return;
 				}
 			} catch {
-				errorMessage = 'ลิงก์ไม่ถูกต้อง';
+				toast.error('ลิงก์ไม่ถูกต้อง');
 				savingEdit = false;
 				return;
 			}
@@ -799,7 +774,7 @@
 
 		if (error) {
 			savingEdit = false;
-			errorMessage = `แก้ไขไม่สำเร็จ: ${error.message}`;
+			toast.error(`แก้ไขไม่สำเร็จ: ${error.message}`);
 			return;
 		}
 
@@ -834,7 +809,7 @@
 				.single();
 			if (calError) {
 				savingEdit = false;
-				errorMessage = `แก้ไข backlog สำเร็จ แต่บันทึก calendar ไม่ได้: ${calError.message}`;
+				toast.error(`แก้ไข backlog สำเร็จ แต่บันทึก calendar ไม่ได้: ${calError.message}`);
 				return;
 			}
 			calendarId = calendarRow.id;
@@ -847,7 +822,7 @@
 				.eq('calendar_id', calendarId);
 			if (deleteAssignmentsError) {
 				savingEdit = false;
-				errorMessage = `บันทึก backlog สำเร็จ แต่ล้าง team assignments ไม่ได้: ${deleteAssignmentsError.message}`;
+				toast.error(`บันทึก backlog สำเร็จ แต่ล้าง team assignments ไม่ได้: ${deleteAssignmentsError.message}`);
 				return;
 			}
 
@@ -865,15 +840,14 @@
 					.insert(assignments);
 				if (assignmentError) {
 					savingEdit = false;
-					errorMessage = `บันทึก backlog สำเร็จ แต่บันทึก team assignments ไม่ได้: ${assignmentError.message}`;
+					toast.error(`บันทึก backlog สำเร็จ แต่บันทึก team assignments ไม่ได้: ${assignmentError.message}`);
 					return;
 				}
 			}
 		}
 
 		savingEdit = false;
-		message = 'แก้ไข backlog เรียบร้อยแล้ว';
-		setTimeout(() => { message = ''; }, 4000);
+		toast.success('แก้ไข backlog เรียบร้อยแล้ว');
 		await closeEditModal();
 		await Promise.all([loadIdeas(), loadScheduledBacklogIds()]);
 	}
@@ -980,8 +954,7 @@
 			if (res.ok) {
 				suggestions = suggestions.filter((_, i) => i !== index);
 				await loadIdeas();
-				message = `เพิ่ม "${s.title}" เข้า Backlog แล้ว`;
-				setTimeout(() => { message = ''; }, 4000);
+				toast.success(`เพิ่ม "${s.title}" เข้า Backlog แล้ว`);
 			}
 		} finally {
 			acceptingIndex = null;
@@ -1038,15 +1011,11 @@
 </script>
 
 <main class="page">
-	<section class="hero">
-		<p class="kicker">BigLot Media Plan</p>
-		<h1>Idea Backlog</h1>
-		<p class="subtitle">
-			วางลิงก์แล้ว Analyze อัตโนมัติ หรือกรอกเองแบบ Manual ก็ได้ รองรับ
-			YouTube / Facebook / Instagram / TikTok และเก็บได้ทั้ง Video, Post,
-			Image
-		</p>
-	</section>
+	<PageHeader
+		eyebrow="BigLot Media Plan"
+		title="Idea Backlog"
+		subtitle="วางลิงก์แล้ว Analyze อัตโนมัติ หรือกรอกเองแบบ Manual ก็ได้ รองรับ YouTube / Facebook / Instagram / TikTok และเก็บได้ทั้ง Video, Post, Image"
+	/>
 
 	{#if !hasSupabaseConfig}
 		<p class="alert">
@@ -1058,18 +1027,24 @@
 	{#if ideas.length > 0}
 	<section class="dashboard">
 		<div class="dash-cards">
-			<div class="dash-card">
-				<p class="dash-value">{dashboardStats.totalIdeas}</p>
-				<p class="dash-label">Ideas ในคลัง</p>
-			</div>
-			<div class="dash-card">
-				<p class="dash-value">{scheduledCalendarMap.size}</p>
-				<p class="dash-label">Scheduled</p>
-			</div>
-			<div class="dash-card">
-				<p class="dash-value">{numberFormatter.format(dashboardStats.totalViews)}</p>
-				<p class="dash-label">Total Views (backlog)</p>
-			</div>
+			<StatsCard
+				icon="💡"
+				label="Ideas ในคลัง"
+				value={dashboardStats.totalIdeas}
+				variant="primary"
+			/>
+			<StatsCard
+				icon="📅"
+				label="Scheduled"
+				value={scheduledCalendarMap.size}
+				sub="{Math.round((scheduledCalendarMap.size / Math.max(ideas.length, 1)) * 100)}% of total"
+				variant="success"
+			/>
+			<StatsCard
+				icon="👁"
+				label="Total Views"
+				value={numberFormatter.format(dashboardStats.totalViews)}
+			/>
 		</div>
 		<div class="dash-row">
 			<div class="dash-group">
@@ -1077,7 +1052,8 @@
 				<div class="dash-pills">
 					{#each platformOrder as p}
 						{#if (dashboardStats.platformCount[p] ?? 0) > 0}
-							<span class="dash-pill platform-frame--{p}">{platformLabel[p]} <strong>{dashboardStats.platformCount[p]}</strong></span>
+							<Badge variant="platform" value={p} />
+							<span class="dash-pill-count">{dashboardStats.platformCount[p]}</span>
 						{/if}
 					{/each}
 				</div>
@@ -1087,7 +1063,8 @@
 				<div class="dash-pills">
 					{#each PRODUCTION_STAGES as stage}
 						{#if (dashboardStats.stageCount[stage] ?? 0) > 0}
-							<span class="dash-pill stage--{stage}">{stageLabel[stage]} <strong>{dashboardStats.stageCount[stage]}</strong></span>
+							<Badge variant="stage" value={stage} />
+							<span class="dash-pill-count">{dashboardStats.stageCount[stage]}</span>
 						{/if}
 					{/each}
 				</div>
@@ -1106,22 +1083,16 @@
 			/>
 		</div>
 		<div class="panel-actions">
-			<button class="primary" onclick={analyzeLink} disabled={enriching}>
+			<Button variant="primary" onclick={analyzeLink} loading={enriching}>
 				{enriching ? "Analyzing..." : "Analyze Link"}
-			</button>
-			<button class="ai-suggest-btn" onclick={() => { showSuggestModeModal = true; customPrompt = ''; }} disabled={suggestLoading}>
+			</Button>
+			<Button variant="ai" onclick={() => { showSuggestModeModal = true; customPrompt = ''; }} disabled={suggestLoading}>
 				✦ ช่วยคิด idea
-			</button>
+			</Button>
 		</div>
 	</section>
 
-	{#if message}
-		<p class="notice success">{message}</p>
-	{/if}
 
-	{#if errorMessage}
-		<p class="notice error">{errorMessage}</p>
-	{/if}
 
 	{#if draft}
 		<section class="panel">
@@ -1217,13 +1188,9 @@
 				></textarea>
 			</div>
 
-			<button
-				class="primary"
-				onclick={saveIdea}
-				disabled={saving || !hasSupabaseConfig}
-			>
+			<Button variant="primary" onclick={saveIdea} loading={saving} disabled={!hasSupabaseConfig}>
 				{saving ? "Saving..." : "Save To Backlog"}
-			</button>
+			</Button>
 		</section>
 	{/if}
 
@@ -1340,13 +1307,9 @@
 					></textarea>
 				</div>
 
-				<button
-					class="primary"
-					onclick={saveManualIdea}
-					disabled={saving || !hasSupabaseConfig}
-				>
+				<Button variant="primary" onclick={saveManualIdea} loading={saving} disabled={!hasSupabaseConfig}>
 					{saving ? "Saving..." : "Save Manual Idea"}
-				</button>
+				</Button>
 			</div>
 		</details>
 	</section>
@@ -1355,7 +1318,7 @@
 		<div class="list-head">
 			<h2>Backlog ({ideas.length - publishedBacklogIds.size} active{publishedBacklogIds.size > 0 ? ` · ${publishedBacklogIds.size} published` : ''})</h2>
 			<div style="display:flex;gap:0.5rem;align-items:center">
-				{#if loadingIdeas}<span>Loading...</span>{/if}
+				{#if loadingIdeas}<Spinner size="sm" />{/if}
 				{#if publishedBacklogIds.size > 0}
 					<button
 						class="toggle-btn {showPublished ? 'active' : ''}"
@@ -1546,7 +1509,7 @@
 
 	{#if showSuggestModeModal}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="modal-overlay" onclick={() => { showSuggestModeModal = false; }} onkeydown={(e) => { if (e.key === 'Escape') showSuggestModeModal = false; }}></div>
+		<div class="modal-overlay" onclick={() => { showSuggestModeModal = false; }} onkeydown={(e) => { if (e.key === 'Escape') showSuggestModeModal = false; }}>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="modal-box" onclick={(e) => e.stopPropagation()} onkeydown={() => {}} style="max-width: 480px;">
 			<div class="modal-header">
@@ -1581,11 +1544,12 @@
 				</button>
 			</div>
 		</div>
+		</div>
 	{/if}
 
 	{#if showCustomPromptModal}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="modal-overlay" onclick={() => { showCustomPromptModal = false; }} onkeydown={(e) => { if (e.key === 'Escape') showCustomPromptModal = false; }}></div>
+		<div class="modal-overlay" onclick={() => { showCustomPromptModal = false; }} onkeydown={(e) => { if (e.key === 'Escape') showCustomPromptModal = false; }}>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="modal-box" onclick={(e) => e.stopPropagation()} onkeydown={() => {}} style="max-width: 520px;">
 			<div class="modal-header">
@@ -1597,7 +1561,7 @@
 			</div>
 
 			<div style="display: grid; gap: 0.6rem;">
-				<label style="font-size: 0.9rem; color: #475569;">
+				<label style="font-size: 0.9rem; color: var(--color-slate-600);">
 					ป้อน prompt เพื่อให้ AI เสนอ idea ตามที่ต้องการ
 				</label>
 				<textarea
@@ -1630,11 +1594,12 @@
 				</button>
 			</div>
 		</div>
+		</div>
 	{/if}
 
 	{#if showSuggestModal}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="modal-overlay" onclick={() => { showSuggestModal = false; }} onkeydown={(e) => { if (e.key === 'Escape') showSuggestModal = false; }}></div>
+		<div class="modal-overlay" onclick={() => { showSuggestModal = false; }} onkeydown={(e) => { if (e.key === 'Escape') showSuggestModal = false; }}>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="modal-box suggest-modal" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
 			<div class="modal-header">
@@ -1687,11 +1652,12 @@
 				<button class="suggest-regenerate" onclick={suggestIdeas}>สร้าง idea ใหม่อีกชุด</button>
 			{/if}
 		</div>
+		</div>
 	{/if}
 
 	{#if editingIdea}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="modal-overlay" onclick={closeEditModal} onkeydown={(e) => { if (e.key === 'Escape') closeEditModal(); }}></div>
+		<div class="modal-overlay" onclick={closeEditModal} onkeydown={(e) => { if (e.key === 'Escape') closeEditModal(); }}>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="modal-box" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
 			<div class="modal-header">
@@ -1832,6 +1798,7 @@
 				></textarea>
 			</div>
 
+
 			<div class="edit-row">
 				<div class="notes-label-row">
 					<label for="edit-notes">Idea Notes</label>
@@ -1875,17 +1842,18 @@
 			</div>
 
 			<div class="modal-footer">
-				<button class="primary" onclick={saveEdit} disabled={savingEdit || !hasSupabaseConfig}>
+				<Button variant="primary" onclick={saveEdit} loading={savingEdit} disabled={!hasSupabaseConfig}>
 					{savingEdit ? 'Saving...' : 'Save Changes'}
-				</button>
-				<button class="modal-cancel" onclick={closeEditModal}>Cancel</button>
+				</Button>
+				<Button variant="ghost" onclick={closeEditModal}>Cancel</Button>
 			</div>
+		</div>
 		</div>
 	{/if}
 
 {#if showPlanExpanded}
 	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-	<div class="modal-overlay plan-expand-overlay" onclick={() => { showPlanExpanded = false; }}></div>
+	<div class="modal-overlay plan-expand-overlay" onclick={() => { showPlanExpanded = false; }}>
 	<div class="modal-box plan-expand-box" onclick={(e) => e.stopPropagation()} onkeydown={(e) => { if (e.key === 'Escape') showPlanExpanded = false; }}>
 		<div class="plan-expand-header">
 			<span class="plan-expand-title">✦ Content Plan</span>
@@ -1894,6 +1862,7 @@
 		<div class="plan-expand-body notes-preview">
 			{@html notesRendered}
 		</div>
+	</div>
 	</div>
 {/if}
 </main>
@@ -1904,41 +1873,17 @@
 		gap: 1rem;
 	}
 
-	.hero {
-		text-align: center;
-		padding: 1.5rem 0 0.5rem;
-	}
-
-	.kicker {
-		font-size: 0.78rem;
-		text-transform: uppercase;
-		letter-spacing: 0.16em;
-		color: #b45309;
-		font-weight: 700;
-		margin: 0;
-	}
-
 	h1,
 	h2,
 	h3 {
-		font-family: "Space Grotesk", "Noto Sans Thai", sans-serif;
-	}
-
-	h1 {
-		margin: 0.45rem 0;
-		font-size: clamp(2rem, 5vw, 3rem);
-	}
-
-	.subtitle {
-		margin: 0;
-		color: #475569;
+		font-family: var(--font-heading);
 	}
 
 	.panel {
 		padding: 1.25rem;
 		border-radius: 1rem;
 		background: rgba(255, 255, 255, 0.85);
-		border: 1px solid rgba(15, 23, 42, 0.08);
+		border: 1px solid var(--color-border);
 	}
 
 	.row {
@@ -1954,7 +1899,7 @@
 	}
 
 	.manual-dropdown {
-		border: 1px solid rgba(15, 23, 42, 0.08);
+		border: 1px solid var(--color-border);
 		border-radius: 0.8rem;
 		padding: 0.35rem 0.65rem;
 		background: rgba(255, 255, 255, 0.72);
@@ -1975,7 +1920,7 @@
 	.manual-dropdown summary small {
 		font-size: 0.72rem;
 		font-weight: 600;
-		color: #64748b;
+		color: var(--color-slate-500);
 	}
 
 	.manual-body {
@@ -1984,7 +1929,7 @@
 
 	label {
 		font-size: 0.86rem;
-		color: #475569;
+		color: var(--color-slate-600);
 	}
 
 	input,
@@ -1995,8 +1940,8 @@
 		font: inherit;
 		padding: 0.72rem 0.85rem;
 		border-radius: 0.7rem;
-		border: 1px solid rgba(15, 23, 42, 0.14);
-		background: #fff;
+		border: 1px solid var(--color-border-strong);
+		background: var(--color-bg-elevated);
 	}
 
 	#edit-notes {
@@ -2028,19 +1973,6 @@
 		font-size: 0.9rem;
 	}
 
-	.notice.success {
-		background: rgba(22, 163, 74, 0.12);
-		color: #166534;
-		border: 1px solid rgba(22, 163, 74, 0.22);
-	}
-
-	.notice.error,
-	.alert {
-		background: rgba(220, 38, 38, 0.1);
-		color: #991b1b;
-		border: 1px solid rgba(220, 38, 38, 0.2);
-	}
-
 	.preview {
 		display: grid;
 		grid-template-columns: minmax(0, 280px) 1fr;
@@ -2065,7 +1997,7 @@
 
 	.instagram-frame {
 		border: 0;
-		background: #fff;
+		background: var(--color-bg-elevated);
 		aspect-ratio: 4 / 5;
 	}
 
@@ -2078,7 +2010,7 @@
 	.platform {
 		display: inline-block;
 		padding: 0.15rem 0.55rem;
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		font-size: 0.7rem;
 		font-weight: 700;
 		background: rgba(180, 83, 9, 0.14);
@@ -2094,7 +2026,7 @@
 	.content-type {
 		display: inline-block;
 		padding: 0.15rem 0.55rem;
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		font-size: 0.7rem;
 		font-weight: 700;
 		background: rgba(15, 118, 110, 0.12);
@@ -2103,7 +2035,7 @@
 
 	.meta {
 		margin: 0.25rem 0 0;
-		color: #64748b;
+		color: var(--color-slate-500);
 		font-size: 0.9rem;
 	}
 
@@ -2118,7 +2050,7 @@
 		padding: 0.65rem;
 		border-radius: 0.75rem;
 		background: rgba(15, 23, 42, 0.04);
-		border: 1px solid rgba(15, 23, 42, 0.08);
+		border: 1px solid var(--color-border);
 	}
 
 	.metric-item input {
@@ -2143,7 +2075,7 @@
 
 	.empty {
 		text-align: center;
-		color: #64748b;
+		color: var(--color-slate-500);
 		padding: 1.5rem;
 	}
 
@@ -2160,7 +2092,7 @@
 	}
 
 	.category-group {
-		border: 1px solid rgba(15, 23, 42, 0.08);
+		border: 1px solid var(--color-border);
 		border-radius: 0.9rem;
 		background: rgba(248, 250, 252, 0.72);
 		overflow: hidden;
@@ -2200,16 +2132,16 @@
 
 	.group-toggle {
 		font-size: 0.76rem;
-		color: #64748b;
+		color: var(--color-slate-500);
 		transition: transform 0.18s ease;
 	}
 
 	.group-count {
 		padding: 0.18rem 0.6rem;
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		font-size: 0.75rem;
 		font-weight: 700;
-		color: #1d4ed8;
+		color: var(--color-primary);
 		background: rgba(37, 99, 235, 0.12);
 	}
 
@@ -2221,7 +2153,7 @@
 
 	.card {
 		--platform-frame-color: rgba(15, 23, 42, 0.1);
-		background: #fff;
+		background: var(--color-bg-elevated);
 		border-radius: 0.95rem;
 		border: 1px solid var(--platform-frame-color);
 		padding: 0.7rem;
@@ -2272,18 +2204,18 @@
 		font-size: 1.1rem;
 		line-height: 1;
 		cursor: pointer;
-		color: #94a3b8;
-		transition: background 0.15s, color 0.15s;
+		color: var(--color-slate-400);
+		transition: background var(--transition-fast), color 0.15s;
 	}
 
 	.dot-menu-btn:hover {
 		background: rgba(15, 23, 42, 0.07);
-		color: #334155;
+		color: var(--color-slate-700);
 	}
 
 	.chip {
 		padding: 0.12rem 0.48rem;
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		font-size: 0.7rem;
 		font-weight: 700;
 		background: rgba(22, 163, 74, 0.12);
@@ -2298,7 +2230,7 @@
 	.idea-title {
 		margin: 0;
 		font-size: 0.84rem;
-		color: #475569;
+		color: var(--color-slate-600);
 		line-height: 1.45;
 		display: -webkit-box;
 		-webkit-line-clamp: 2;
@@ -2321,19 +2253,19 @@
 
 	.notes-wrap::-webkit-scrollbar-thumb {
 		background: rgba(148, 163, 184, 0.7);
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 	}
 
 	.notes {
 		margin: 0;
 		font-size: 0.85rem;
-		color: #475569;
+		color: var(--color-slate-600);
 		line-height: 1.55;
 	}
 
 	.link {
 		font-size: 0.8rem;
-		color: #2563eb;
+		color: var(--color-blue-600);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -2342,7 +2274,7 @@
 
 	.link-muted {
 		margin: 0;
-		color: #94a3b8;
+		color: var(--color-slate-400);
 	}
 
 	.card-actions {
@@ -2365,7 +2297,7 @@
 		flex: 1;
 		border: 1px solid rgba(37, 99, 235, 0.24);
 		background: rgba(37, 99, 235, 0.08);
-		color: #1d4ed8;
+		color: var(--color-primary);
 		padding: 0.45rem 0.6rem;
 		border-radius: 0.6rem;
 		font-weight: 700;
@@ -2394,7 +2326,7 @@
 		position: fixed;
 		z-index: 1000;
 		width: 260px;
-		background: #fff;
+		background: var(--color-bg-elevated);
 		border: 1px solid rgba(15, 23, 42, 0.12);
 		border-radius: 0.85rem;
 		box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
@@ -2416,7 +2348,7 @@
 	.ctx-title {
 		margin: 0;
 		font-size: 0.8rem;
-		color: #475569;
+		color: var(--color-slate-600);
 	}
 
 	.ctx-pin {
@@ -2441,7 +2373,7 @@
 
 	.ctx-label {
 		font-size: 0.78rem;
-		color: #64748b;
+		color: var(--color-slate-500);
 		font-weight: 600;
 	}
 
@@ -2451,8 +2383,8 @@
 		font: inherit;
 		padding: 0.55rem 0.7rem;
 		border-radius: 0.6rem;
-		border: 1px solid rgba(15, 23, 42, 0.14);
-		background: #fff;
+		border: 1px solid var(--color-border-strong);
+		background: var(--color-bg-elevated);
 	}
 
 	.ctx-actions {
@@ -2481,40 +2413,14 @@
 		border: 1px solid rgba(15, 23, 42, 0.12);
 		padding: 0.55rem;
 		border-radius: 0.6rem;
-		background: #fff;
-		color: #475569;
+		background: var(--color-bg-elevated);
+		color: var(--color-slate-600);
 		font-weight: 700;
 		font-size: 0.82rem;
 		cursor: pointer;
 	}
 
 	/* Edit Modal */
-	.modal-overlay {
-		position: fixed;
-		inset: 0;
-		z-index: 999;
-		background: rgba(0, 0, 0, 0.45);
-	}
-
-	.modal-box {
-		position: fixed;
-		top: 1rem;
-		left: 50%;
-		transform: translateX(-50%);
-		z-index: 1000;
-		width: min(560px, calc(100vw - 2rem));
-		max-height: calc(100vh - 2rem);
-		overflow-y: auto;
-		overscroll-behavior: contain;
-		-webkit-overflow-scrolling: touch;
-		background: #fff;
-		border-radius: 1rem;
-		padding: 1.5rem;
-		display: grid;
-		gap: 0.85rem;
-		align-content: start;
-	}
-
 	.modal-header {
 		display: flex;
 		justify-content: space-between;
@@ -2540,7 +2446,7 @@
 	.modal-header h3 {
 		margin: 0;
 		font-size: 1.05rem;
-		font-family: 'Space Grotesk', 'Noto Sans Thai', sans-serif;
+		font-family: var(--font-heading);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -2550,7 +2456,7 @@
 		border: 0;
 		background: transparent;
 		font-size: 1rem;
-		color: #64748b;
+		color: var(--color-slate-500);
 		cursor: pointer;
 		padding: 0.15rem 0.3rem;
 		border-radius: 0.4rem;
@@ -2569,7 +2475,7 @@
 	.field-group-label {
 		margin: 0;
 		font-size: 0.86rem;
-		color: #475569;
+		color: var(--color-slate-600);
 		font-weight: 600;
 	}
 
@@ -2633,9 +2539,9 @@
 	}
 
 	.modal-cancel {
-		border: 1px solid rgba(15, 23, 42, 0.14);
-		background: #fff;
-		color: #475569;
+		border: 1px solid var(--color-border-strong);
+		background: var(--color-bg-elevated);
+		color: var(--color-slate-600);
 		padding: 0.6rem 1rem;
 		border-radius: 0.68rem;
 		font-weight: 700;
@@ -2654,32 +2560,6 @@
 		gap: 0.6rem;
 	}
 
-	.dash-card {
-		background: rgba(255, 255, 255, 0.85);
-		border: 1px solid rgba(15, 23, 42, 0.08);
-		border-radius: 0.9rem;
-		padding: 0.85rem 1rem;
-		text-align: center;
-	}
-
-	.dash-value {
-		margin: 0;
-		font-size: 1.7rem;
-		font-weight: 800;
-		color: #0f172a;
-		font-family: 'Space Grotesk', sans-serif;
-		line-height: 1.1;
-	}
-
-	.dash-label {
-		margin: 0.2rem 0 0;
-		font-size: 0.72rem;
-		color: #64748b;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-	}
-
 	.dash-row {
 		display: grid;
 		grid-template-columns: 1fr 1fr;
@@ -2688,7 +2568,7 @@
 
 	.dash-group {
 		background: rgba(255, 255, 255, 0.85);
-		border: 1px solid rgba(15, 23, 42, 0.08);
+		border: 1px solid var(--color-border);
 		border-radius: 0.9rem;
 		padding: 0.75rem 0.9rem;
 		display: grid;
@@ -2701,7 +2581,7 @@
 		text-transform: uppercase;
 		letter-spacing: 0.08em;
 		font-weight: 700;
-		color: #94a3b8;
+		color: var(--color-slate-400);
 	}
 
 	.dash-pills {
@@ -2710,25 +2590,13 @@
 		gap: 0.35rem;
 	}
 
-	.dash-pill {
-		padding: 0.22rem 0.6rem;
-		border-radius: 999px;
-		font-size: 0.72rem;
-		background: rgba(15, 23, 42, 0.06);
-		color: #475569;
-		border: 1px solid rgba(15, 23, 42, 0.1);
+	.dash-pill-count {
+		font-size: var(--text-sm);
+		font-weight: var(--fw-bold);
+		color: var(--color-slate-700);
+		min-width: 1.2rem;
+		text-align: center;
 	}
-
-	.dash-pill.platform-frame--youtube { background: rgba(220, 38, 38, 0.1); color: #991b1b; border-color: rgba(220, 38, 38, 0.2); }
-	.dash-pill.platform-frame--facebook { background: rgba(24, 119, 242, 0.1); color: #1d4ed8; border-color: rgba(24, 119, 242, 0.2); }
-	.dash-pill.platform-frame--instagram { background: rgba(236, 72, 153, 0.1); color: #9d174d; border-color: rgba(236, 72, 153, 0.2); }
-	.dash-pill.platform-frame--tiktok { background: rgba(17, 17, 17, 0.08); color: #334155; border-color: rgba(17, 17, 17, 0.15); }
-
-	.dash-pill.stage--planned   { background: rgba(71, 85, 105, 0.1); color: #334155; border-color: rgba(71, 85, 105, 0.2); }
-	.dash-pill.stage--scripting { background: rgba(109, 40, 217, 0.1); color: #5b21b6; border-color: rgba(109, 40, 217, 0.2); }
-	.dash-pill.stage--shooting  { background: rgba(180, 83, 9, 0.1); color: #92400e; border-color: rgba(180, 83, 9, 0.2); }
-	.dash-pill.stage--editing   { background: rgba(29, 78, 216, 0.1); color: #1e3a8a; border-color: rgba(29, 78, 216, 0.2); }
-	.dash-pill.stage--published { background: rgba(22, 101, 52, 0.1); color: #14532d; border-color: rgba(22, 101, 52, 0.2); }
 
 	@media (max-width: 900px) {
 		.preview {
@@ -2755,12 +2623,6 @@
 			grid-template-columns: 1fr;
 		}
 
-		.modal-box {
-			top: 0.75rem;
-			width: min(560px, calc(100vw - 1.5rem));
-			max-height: calc(100vh - 1.5rem);
-			border-radius: 0.75rem;
-		}
 	}
 
 	@media (max-width: 640px) {
@@ -2794,23 +2656,6 @@
 			padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
 		}
 
-		.modal-overlay {
-			display: grid;
-			place-items: end stretch;
-		}
-
-		.modal-box {
-			top: auto;
-			left: 0;
-			right: 0;
-			transform: none;
-			max-width: none;
-			max-height: 92vh;
-			width: 100%;
-			border-radius: 1rem 1rem 0 0;
-			padding-bottom: calc(1.4rem + env(safe-area-inset-bottom, 0px));
-		}
-
 		.primary,
 		.ai-suggest-btn,
 		.export-btn,
@@ -2823,9 +2668,9 @@
 	}
 
 	.export-btn {
-		border: 1px solid rgba(15, 23, 42, 0.14);
+		border: 1px solid var(--color-border-strong);
 		background: rgba(15, 23, 42, 0.04);
-		color: #475569;
+		color: var(--color-slate-600);
 		padding: 0.3rem 0.7rem;
 		border-radius: 0.55rem;
 		font-size: 0.75rem;
@@ -2909,20 +2754,20 @@
 	.suggest-loading-sub {
 		margin: 0;
 		font-size: 0.78rem;
-		color: #94a3b8;
+		color: var(--color-slate-400);
 	}
 
 	.suggest-progress-track {
 		width: 100%;
 		height: 6px;
 		background: #e2e8f0;
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		overflow: hidden;
 	}
 
 	.suggest-progress-bar {
 		height: 100%;
-		border-radius: 999px;
+		border-radius: var(--radius-full);
 		background: linear-gradient(90deg, #6366f1, #8b5cf6, #6366f1);
 		background-size: 200% 100%;
 		animation: progress-slide 1.4s ease-in-out infinite;
@@ -2939,7 +2784,7 @@
 	}
 
 	.suggest-empty {
-		color: #94a3b8;
+		color: var(--color-slate-400);
 		font-size: 0.9rem;
 		text-align: center;
 		padding: 1rem 0;
@@ -2981,7 +2826,7 @@
 
 	.category--hub {
 		background: rgba(37, 99, 235, 0.1);
-		color: #1d4ed8;
+		color: var(--color-primary);
 	}
 
 	.category--help {
@@ -2998,14 +2843,14 @@
 		margin: 0;
 		font-size: 0.95rem;
 		font-weight: 600;
-		color: #0f172a;
+		color: var(--color-slate-900);
 		line-height: 1.35;
 	}
 
 	.suggest-desc {
 		margin: 0;
 		font-size: 0.83rem;
-		color: #475569;
+		color: var(--color-slate-600);
 		line-height: 1.5;
 	}
 
@@ -3077,20 +2922,20 @@
 	.notes-toggle-btn {
 		background: transparent;
 		border: 1px solid #e2e8f0;
-		color: #64748b;
+		color: var(--color-slate-500);
 		padding: 0.28rem 0.65rem;
 		border-radius: 0.45rem;
 		font-size: 0.75rem;
 		font-weight: 600;
 		cursor: pointer;
-		transition: background 0.15s;
+		transition: background var(--transition-fast);
 	}
 
 	.notes-toggle-btn:hover,
 	.notes-toggle-btn.active {
-		background: #f1f5f9;
+		background: var(--color-slate-100);
 		border-color: #cbd5e1;
-		color: #334155;
+		color: var(--color-slate-700);
 	}
 
 	.notes-preview-wrap {
@@ -3109,17 +2954,17 @@
 		font-size: 1rem;
 		line-height: 1;
 		cursor: pointer;
-		color: #64748b;
+		color: var(--color-slate-500);
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		transition: background 0.15s, color 0.15s;
+		transition: background var(--transition-fast), color 0.15s;
 		z-index: 2;
 	}
 
 	.notes-expand-btn:hover {
-		background: #f1f5f9;
-		color: #0f172a;
+		background: var(--color-slate-100);
+		color: var(--color-slate-900);
 	}
 
 	.plan-expand-overlay {
@@ -3146,7 +2991,7 @@
 	.plan-expand-title {
 		font-weight: 700;
 		font-size: 1rem;
-		color: #0f172a;
+		color: var(--color-slate-900);
 	}
 
 	.plan-expand-body {
@@ -3178,22 +3023,22 @@
 	.notes-preview :global(h2),
 	.notes-preview :global(h3) {
 		margin: 1rem 0 0.4rem;
-		font-family: 'Space Grotesk', 'Noto Sans Thai', sans-serif;
+		font-family: var(--font-heading);
 		font-size: 0.95rem;
-		color: #0f172a;
+		color: var(--color-slate-900);
 	}
 	.notes-preview :global(h1) { font-size: 1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.3rem; }
 	.notes-preview :global(p) { margin: 0.3rem 0; }
 	.notes-preview :global(ul), .notes-preview :global(ol) { padding-left: 1.4rem; margin: 0.3rem 0; }
 	.notes-preview :global(li) { margin: 0.15rem 0; }
-	.notes-preview :global(strong) { font-weight: 700; color: #0f172a; }
+	.notes-preview :global(strong) { font-weight: 700; color: var(--color-slate-900); }
 	.notes-preview :global(blockquote) {
 		border-left: 3px solid #6366f1;
 		margin: 0.5rem 0;
 		padding: 0.3rem 0.75rem;
 		background: rgba(99, 102, 241, 0.05);
 		border-radius: 0 0.4rem 0.4rem 0;
-		color: #334155;
+		color: var(--color-slate-700);
 		font-style: italic;
 	}
 	.notes-preview :global(table) {
@@ -3203,7 +3048,7 @@
 		margin: 0.5rem 0;
 	}
 	.notes-preview :global(th) {
-		background: #f1f5f9;
+		background: var(--color-slate-100);
 		padding: 0.4rem 0.6rem;
 		text-align: left;
 		font-weight: 600;
@@ -3216,7 +3061,7 @@
 	}
 	.notes-preview :global(hr) { border: none; border-top: 1px solid #e2e8f0; margin: 0.75rem 0; }
 	.notes-preview :global(code) {
-		background: #f1f5f9;
+		background: var(--color-slate-100);
 		padding: 0.1rem 0.35rem;
 		border-radius: 0.3rem;
 		font-size: 0.8rem;
@@ -3260,15 +3105,15 @@
 		border: 1px solid #e2e8f0;
 		border-radius: 0.5rem;
 		font-size: 0.8rem;
-		color: #475569;
-		background: #f8fafc;
+		color: var(--color-slate-600);
+		background: var(--color-bg);
 		box-sizing: border-box;
 	}
 
 	.plan-context-input:focus {
 		outline: none;
 		border-color: #a5b4fc;
-		background: #fff;
+		background: var(--color-bg-elevated);
 	}
 
 	.plan-context-input:disabled {
