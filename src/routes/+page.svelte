@@ -1,22 +1,50 @@
 <script lang="ts">
 	import { onMount } from "svelte";
+	import { marked } from "marked";
 	import { hasSupabaseConfig, supabase } from "$lib/supabase";
 	import type {
+		BacklogContentCategory,
 		BacklogContentType,
 		EnrichResult,
 		IdeaBacklogRow,
 		SupportedPlatform,
 	} from "$lib/types";
 	import {
+		contentCategoryLabel,
 		contentTypeLabel,
 		getInstagramEmbedUrl,
 		getTikTokEmbedUrl,
+		getYouTubeEmbedUrl,
 		numberFormatter,
 		platformLabel,
 		platformOrder,
 		PRODUCTION_STAGES,
 		stageLabel,
 	} from "$lib/media-plan";
+
+	const CONTENT_CATEGORY_ORDER = ["pin", "hero", "hub", "help"] as const satisfies readonly BacklogContentCategory[];
+	const CONTENT_CATEGORY_OPTIONS = [
+		{ value: "", label: "ไม่ระบุ" },
+		...CONTENT_CATEGORY_ORDER.map((category) => ({
+			value: category,
+			label: contentCategoryLabel[category],
+		})),
+	] as const;
+	const CATEGORY_GROUP_ORDER = [...CONTENT_CATEGORY_ORDER, "uncategorized"] as const;
+	type CategoryGroupKey = (typeof CATEGORY_GROUP_ORDER)[number];
+	type SuggestedContentCategory = Exclude<BacklogContentCategory, "pin">;
+
+	function toCategorySelectValue(
+		value: BacklogContentCategory | null | undefined,
+	): BacklogContentCategory | "" {
+		return value ?? "";
+	}
+
+	function fromCategorySelectValue(
+		value: BacklogContentCategory | "",
+	): BacklogContentCategory | null {
+		return value || null;
+	}
 
 	let linkInput = $state("");
 	let notes = $state("");
@@ -68,7 +96,7 @@
 		title: string;
 		description: string;
 		platform: string;
-		content_category: 'hero' | 'hub' | 'help';
+		content_category: SuggestedContentCategory;
 		reason: string;
 	};
 	let showSuggestModal = $state(false);
@@ -79,11 +107,17 @@
 
 	// AI Content Plan state (used in Edit modal)
 	let generatingPlan = $state(false);
+	let planContext = $state('');
+
+	// AI Auto-categorize state
+	let suggestedCategory = $state<SuggestedContentCategory | null>(null);
+	let selectedCategory = $state<BacklogContentCategory | "">("");
 
 	let manualExpanded = $state(false);
 	let manualUrl = $state("");
 	let manualPlatform = $state<SupportedPlatform>("youtube");
 	let manualContentType = $state<BacklogContentType>("video");
+	let manualCategory = $state<BacklogContentCategory | "">("");
 	let manualTitle = $state("");
 	let manualDescription = $state("");
 	let manualAuthorName = $state("");
@@ -111,6 +145,7 @@
 		url: '',
 		platform: 'youtube' as SupportedPlatform,
 		content_type: 'video' as BacklogContentType,
+		content_category: '' as BacklogContentCategory | '',
 		title: '',
 		description: '',
 		author_name: '',
@@ -124,42 +159,26 @@
 		shares: null as number | null,
 		saves: null as number | null,
 	});
+	let notesViewMode = $state<'edit' | 'preview'>('edit');
+	const notesRendered = $derived(editForm.notes ? marked.parse(editForm.notes) as string : '');
 	let savingEdit = $state(false);
 
 	const groupedIdeas = $derived.by(() => {
-		const grouped = new Map<string, IdeaBacklogRow[]>();
+		const grouped = new Map<CategoryGroupKey, IdeaBacklogRow[]>();
 
 		for (const idea of ideas) {
 			if (!showPublished && publishedBacklogIds.has(idea.id)) continue;
-			const bucket = grouped.get(idea.platform) ?? [];
+			const groupKey = (idea.content_category ?? "uncategorized") as CategoryGroupKey;
+			const bucket = grouped.get(groupKey) ?? [];
 			bucket.push(idea);
-			grouped.set(idea.platform, bucket);
+			grouped.set(groupKey, bucket);
 		}
 
-		const orderedGroups: Array<{
-			key: string;
-			label: string;
-			items: IdeaBacklogRow[];
-		}> = platformOrder
-			.map((platform) => ({
-				key: platform,
-				label: platformLabel[platform],
-				items: grouped.get(platform) ?? [],
-			}))
-			.filter((group) => group.items.length > 0);
-
-		const knownPlatforms = new Set<string>(platformOrder);
-		for (const [platform, items] of grouped.entries()) {
-			if (!knownPlatforms.has(platform)) {
-				orderedGroups.push({
-					key: platform,
-					label: platform.toUpperCase(),
-					items,
-				});
-			}
-		}
-
-		return orderedGroups;
+		return CATEGORY_GROUP_ORDER.map((key) => ({
+			key,
+			label: key === "uncategorized" ? "Uncategorized" : contentCategoryLabel[key],
+			items: grouped.get(key) ?? [],
+		})).filter((group) => group.items.length > 0);
 	});
 
 	const draftTikTokEmbedUrl = $derived(
@@ -171,6 +190,12 @@
 	const draftInstagramEmbedUrl = $derived(
 		draft && draft.platform === "instagram"
 			? getInstagramEmbedUrl(draft.url)
+			: null,
+	);
+
+	const draftYouTubeEmbedUrl = $derived(
+		draft && draft.platform === "youtube"
+			? getYouTubeEmbedUrl(draft.url)
 			: null,
 	);
 	const contentTypeOptions = ["video", "post", "image"] as const;
@@ -201,6 +226,8 @@
 		draft = null;
 		notes = "";
 		selectedContentType = "video";
+		suggestedCategory = null;
+		selectedCategory = "";
 		metrics = {
 			views: null,
 			likes: null,
@@ -214,6 +241,7 @@
 		manualUrl = "";
 		manualPlatform = "youtube";
 		manualContentType = "video";
+		manualCategory = "";
 		manualTitle = "";
 		manualDescription = "";
 		manualAuthorName = "";
@@ -314,7 +342,25 @@
 				saves: draft.metrics.saves,
 			};
 			message = "ดึงข้อมูลสำเร็จแล้ว ตรวจค่า engagement ก่อนบันทึกได้เลย";
-		setTimeout(() => { message = ""; }, 4000);
+			setTimeout(() => { message = ""; }, 4000);
+
+			// Auto-categorize in background (fire-and-forget, ไม่ block UI)
+			suggestedCategory = null;
+			selectedCategory = "";
+			fetch('/api/openclaw/ai/categorize', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					title: draft.title,
+					description: draft.description,
+					platform: draft.platform,
+				}),
+			}).then(r => r.json()).then(data => {
+				if (data.content_category) {
+					suggestedCategory = data.content_category;
+					selectedCategory = data.content_category;
+				}
+			}).catch(() => { /* silent fail */ });
 		} catch (error) {
 			errorMessage =
 				error instanceof Error
@@ -363,6 +409,7 @@
 			share_count: metrics.shares,
 			save_count: metrics.saves,
 			notes: notes.trim() || null,
+			content_category: fromCategorySelectValue(selectedCategory),
 			status: "new",
 			engagement_json: {
 				source: draft.source,
@@ -440,6 +487,7 @@
 			share_count: manualMetrics.shares,
 			save_count: manualMetrics.saves,
 			notes: normalizeOptionalText(manualNotes),
+			content_category: fromCategorySelectValue(manualCategory),
 			status: "new",
 			engagement_json: {
 				source: ["manual-entry"],
@@ -564,6 +612,34 @@
 		await loadScheduledBacklogIds();
 	}
 
+	async function togglePinnedState(idea: IdeaBacklogRow) {
+		if (!supabase) {
+			errorMessage = "ยังไม่ได้ตั้งค่า Supabase";
+			return;
+		}
+
+		errorMessage = "";
+		message = "";
+		const nextCategory = idea.content_category === "pin" ? null : "pin";
+		const { error } = await supabase
+			.from("idea_backlog")
+			.update({ content_category: nextCategory })
+			.eq("id", idea.id);
+
+		if (error) {
+			errorMessage = `อัปเดต category ไม่สำเร็จ: ${error.message}`;
+			scrollToTop();
+			return;
+		}
+
+		message = nextCategory === "pin"
+			? `${backlogCode(idea)} ถูก pin แล้ว`
+			: `${backlogCode(idea)} ถูกเอาออกจาก pin แล้ว`;
+		setTimeout(() => { message = ""; }, 4000);
+		if (contextMenuIdea?.id === idea.id) closeContextMenu();
+		await loadIdeas();
+	}
+
 	function openEditModal(idea: IdeaBacklogRow) {
 		editingIdea = idea;
 		const calEntry = scheduledCalendarMap.get(idea.id);
@@ -571,6 +647,7 @@
 			url: idea.url ?? '',
 			platform: idea.platform,
 			content_type: idea.content_type ?? 'video',
+			content_category: toCategorySelectValue(idea.content_category),
 			title: idea.title ?? '',
 			description: idea.description ?? '',
 			author_name: idea.author_name ?? '',
@@ -618,6 +695,7 @@
 			url: rawUrl || null,
 			platform: editForm.platform,
 			content_type: editForm.content_type,
+			content_category: fromCategorySelectValue(editForm.content_category),
 			title: editForm.title.trim() || null,
 			description: editForm.description.trim() || null,
 			author_name: editForm.author_name.trim() || null,
@@ -667,6 +745,13 @@
 
 	async function generateContentPlan() {
 		if (!editingIdea) return;
+
+		// ถ้า Notes มีข้อมูลอยู่แล้ว ให้ถามก่อน
+		if (editForm.notes.trim()) {
+			const confirmed = window.confirm('Notes มีข้อมูลอยู่แล้ว ต้องการแทนที่ด้วย Content Plan ใหม่ไหม?');
+			if (!confirmed) return;
+		}
+
 		generatingPlan = true;
 		try {
 			const res = await fetch('/api/openclaw/ai/content-plan', {
@@ -676,12 +761,14 @@
 					title: editForm.title || editingIdea.title,
 					description: editForm.description || editingIdea.description,
 					platform: editForm.platform,
-					content_category: editingIdea.content_category,
+					content_category: fromCategorySelectValue(editForm.content_category),
+					context: planContext.trim() || undefined,
 				}),
 			});
 			const data = await res.json();
 			if (res.ok && data.plan) {
 				editForm.notes = data.plan;
+				notesViewMode = 'preview';
 			} else {
 				errorMessage = data.error ?? 'Generate plan ไม่สำเร็จ';
 			}
@@ -736,11 +823,12 @@
 	}
 
 	function exportBacklogCSV() {
-		const headers = ['Code','Platform','Content Type','Title','URL','Views','Likes','Comments','Shares','Saves','Notes','Created'];
+		const headers = ['Code','Platform','Content Type','Category','Title','URL','Views','Likes','Comments','Shares','Saves','Notes','Created'];
 		const rows = ideas.map(idea => [
 			backlogCode(idea),
 			idea.platform,
 			idea.content_type ?? '',
+			idea.content_category ?? '',
 			(idea.title ?? '').replace(/"/g, '""'),
 			(idea.url ?? '').replace(/"/g, '""'),
 			idea.view_count ?? '',
@@ -873,6 +961,15 @@
 						allow="encrypted-media; picture-in-picture"
 						allowfullscreen
 					></iframe>
+				{:else if draftYouTubeEmbedUrl}
+					<iframe
+						class="preview-media youtube-frame"
+						src={draftYouTubeEmbedUrl}
+						title="YouTube Preview"
+						loading="lazy"
+						allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+						allowfullscreen
+					></iframe>
 				{:else if draft.thumbnailUrl}
 					<img
 						class="preview-media"
@@ -959,6 +1056,22 @@
 			</div>
 
 			<div class="row">
+				<div class="category-label-row">
+					<label for="content-category">Category</label>
+					{#if suggestedCategory}
+						<span class="category-suggest-label">
+							AI แนะนำ: {contentCategoryLabel[suggestedCategory]}
+						</span>
+					{/if}
+				</div>
+				<select id="content-category" bind:value={selectedCategory}>
+					{#each CONTENT_CATEGORY_OPTIONS as option}
+						<option value={option.value}>{option.label}</option>
+					{/each}
+				</select>
+			</div>
+
+			<div class="row">
 				<label for="notes">Idea Notes</label>
 				<textarea
 					id="notes"
@@ -1022,6 +1135,15 @@
 							{/each}
 						</select>
 					</div>
+				</div>
+
+				<div class="row">
+					<label for="manual-category">Category</label>
+					<select id="manual-category" bind:value={manualCategory}>
+						{#each CONTENT_CATEGORY_OPTIONS as option}
+							<option value={option.value}>{option.label}</option>
+						{/each}
+					</select>
 				</div>
 
 				<div class="row">
@@ -1160,16 +1282,18 @@
 		{#if ideas.length === 0}
 			<p class="empty">ยังไม่มีรายการไอเดียในระบบ</p>
 		{:else}
-			<div class="platform-groups">
+			<div class="category-groups">
 				{#each groupedIdeas as group}
-					<section class="platform-group">
-						<div class="platform-group-head">
-							<h3>{group.label}</h3>
-							<span class="group-count">{group.items.length}</span
-							>
-						</div>
+					<details class="category-group" open>
+						<summary class="category-group-head">
+							<div class="category-group-title">
+								<h3>{group.label}</h3>
+								<span class="group-count">{group.items.length}</span>
+							</div>
+							<span class="group-toggle">▼</span>
+						</summary>
 
-						<div class="grid">
+						<div class="grid category-group-grid">
 							{#each group.items as idea}
 								{@const tiktokEmbedUrl =
 									idea.platform === "tiktok" && idea.url
@@ -1212,6 +1336,11 @@
 									<div class="card-body">
 										<div class="head-row">
 											<div class="chip-row">
+												{#if idea.content_category}
+													<span class="category-chip category--{idea.content_category}">
+														{contentCategoryLabel[idea.content_category]}
+													</span>
+												{/if}
 												<span class="platform"
 													>{idea.platform.toUpperCase()}</span
 												>
@@ -1257,6 +1386,12 @@
 										{/if}
 										<div class="card-actions">
 											<button
+												class="pin-btn"
+												onclick={() => togglePinnedState(idea)}
+											>
+												{idea.content_category === "pin" ? "Unpin" : "Pin"}
+											</button>
+											<button
 												class="edit-btn"
 												onclick={() => openEditModal(idea)}
 											>
@@ -1276,7 +1411,7 @@
 								</article>
 							{/each}
 						</div>
-					</section>
+					</details>
 				{/each}
 			</div>
 		{/if}
@@ -1294,6 +1429,14 @@
 				<strong>{backlogCode(contextMenuIdea)}</strong>
 			</div>
 			<p class="ctx-title">{contextMenuIdea.title ?? 'Untitled idea'}</p>
+			<button
+				class="ctx-pin"
+				onclick={() => {
+					if (contextMenuIdea) void togglePinnedState(contextMenuIdea);
+				}}
+			>
+				{contextMenuIdea.content_category === 'pin' ? 'Unpin จาก category pin' : 'Pin คลิปนี้'}
+			</button>
 			{#if scheduledBacklogIds.has(contextMenuIdea.id)}
 				<p class="ctx-note">ไอเดียนี้ถูก schedule แล้ว (จะย้ายวัน)</p>
 			{/if}
@@ -1398,6 +1541,15 @@
 			</div>
 
 			<div class="edit-row">
+				<label for="edit-content-category">Category</label>
+				<select id="edit-content-category" bind:value={editForm.content_category}>
+					{#each CONTENT_CATEGORY_OPTIONS as option}
+						<option value={option.value}>{option.label}</option>
+					{/each}
+				</select>
+			</div>
+
+			<div class="edit-row">
 				<label for="edit-title">Title</label>
 				<input id="edit-title" bind:value={editForm.title} placeholder="ชื่อคอนเทนต์" />
 			</div>
@@ -1459,16 +1611,37 @@
 			<div class="edit-row">
 				<div class="notes-label-row">
 					<label for="edit-notes">Idea Notes</label>
-					<button class="ai-plan-btn" onclick={generateContentPlan} disabled={generatingPlan}>
-						{generatingPlan ? '✦ กำลังวางแผน...' : '✦ Generate Content Plan'}
-					</button>
+					<div class="notes-actions">
+						{#if editForm.notes}
+							<button
+								class="notes-toggle-btn {notesViewMode === 'preview' ? 'active' : ''}"
+								onclick={() => { notesViewMode = notesViewMode === 'preview' ? 'edit' : 'preview'; }}
+							>{notesViewMode === 'preview' ? '✏️ แก้ไข' : '👁 ดูผล'}</button>
+						{/if}
+						<button class="ai-plan-btn" onclick={generateContentPlan} disabled={generatingPlan}>
+							{generatingPlan ? '✦ กำลังวางแผน...' : '✦ Generate Plan'}
+						</button>
+					</div>
 				</div>
+				<input
+					class="plan-context-input"
+					bind:value={planContext}
+					placeholder="Context เพิ่มเติม เช่น 'เน้น hook แบบ Skit' หรือ 'ถ่ายใน office' (ไม่บังคับ)"
+					disabled={generatingPlan}
+				/>
 				{#if generatingPlan}
 					<div class="suggest-progress-track" style="margin-bottom: 0.4rem;">
 						<div class="suggest-progress-bar"></div>
 					</div>
 				{/if}
-				<textarea id="edit-notes" bind:value={editForm.notes} rows={6} placeholder="กด Generate Content Plan เพื่อให้ AI วางแผนการถ่าย หรือกรอกเอง..."></textarea>
+				{#if notesViewMode === 'preview' && editForm.notes}
+					<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+					<div class="notes-preview" onclick={() => { notesViewMode = 'edit'; }}>
+						{@html notesRendered}
+					</div>
+				{:else}
+					<textarea id="edit-notes" bind:value={editForm.notes} rows={8} placeholder="กด Generate Plan เพื่อให้ AI วางแผนการถ่าย หรือกรอกเอง..."></textarea>
+				{/if}
 			</div>
 
 			<div class="modal-footer">
@@ -1646,6 +1819,12 @@
 		aspect-ratio: 4 / 5;
 	}
 
+	.youtube-frame {
+		border: 0;
+		background: #000;
+		aspect-ratio: 16 / 9;
+	}
+
 	.platform {
 		display: inline-block;
 		padding: 0.15rem 0.55rem;
@@ -1718,22 +1897,61 @@
 		padding: 1.5rem;
 	}
 
-	.platform-groups {
+	.category-label-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+	}
+
+	.category-groups {
 		display: grid;
 		gap: 1rem;
 	}
 
-	.platform-group-head {
+	.category-group {
+		border: 1px solid rgba(15, 23, 42, 0.08);
+		border-radius: 0.9rem;
+		background: rgba(248, 250, 252, 0.72);
+		overflow: hidden;
+	}
+
+	.category-group-head {
+		list-style: none;
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		padding-bottom: 0.55rem;
-		border-bottom: 1px solid rgba(15, 23, 42, 0.08);
-		margin-bottom: 0.8rem;
+		padding: 0.9rem 1rem;
+		cursor: pointer;
+		user-select: none;
 	}
 
-	.platform-group-head h3 {
+	.category-group-head::-webkit-details-marker {
+		display: none;
+	}
+
+	.category-group-title {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+	}
+
+	.category-group-head h3 {
 		margin: 0;
+	}
+
+	.category-group-grid {
+		padding: 0 1rem 1rem;
+	}
+
+	.category-group[open] .group-toggle {
+		transform: rotate(180deg);
+	}
+
+	.group-toggle {
+		font-size: 0.76rem;
+		color: #64748b;
+		transition: transform 0.18s ease;
 	}
 
 	.group-count {
@@ -1858,6 +2076,17 @@
 		gap: 0.4rem;
 	}
 
+	.pin-btn {
+		flex: 1;
+		border: 1px solid rgba(180, 83, 9, 0.24);
+		background: rgba(180, 83, 9, 0.08);
+		color: #92400e;
+		padding: 0.45rem 0.6rem;
+		border-radius: 0.6rem;
+		font-weight: 700;
+		cursor: pointer;
+	}
+
 	.edit-btn {
 		flex: 1;
 		border: 1px solid rgba(37, 99, 235, 0.24);
@@ -1914,6 +2143,17 @@
 		margin: 0;
 		font-size: 0.8rem;
 		color: #475569;
+	}
+
+	.ctx-pin {
+		border: 1px solid rgba(180, 83, 9, 0.24);
+		background: rgba(180, 83, 9, 0.08);
+		color: #92400e;
+		padding: 0.5rem 0.6rem;
+		border-radius: 0.6rem;
+		font-weight: 700;
+		font-size: 0.82rem;
+		cursor: pointer;
 	}
 
 	.ctx-note {
@@ -2445,6 +2685,11 @@
 		color: #15803d;
 	}
 
+	.category--pin {
+		background: rgba(180, 83, 9, 0.12);
+		color: #92400e;
+	}
+
 	.suggest-title {
 		margin: 0;
 		font-size: 0.95rem;
@@ -2519,6 +2764,93 @@
 		gap: 0.5rem;
 	}
 
+	.notes-actions {
+		display: flex;
+		gap: 0.4rem;
+		align-items: center;
+	}
+
+	.notes-toggle-btn {
+		background: transparent;
+		border: 1px solid #e2e8f0;
+		color: #64748b;
+		padding: 0.28rem 0.65rem;
+		border-radius: 0.45rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+
+	.notes-toggle-btn:hover,
+	.notes-toggle-btn.active {
+		background: #f1f5f9;
+		border-color: #cbd5e1;
+		color: #334155;
+	}
+
+	.notes-preview {
+		border: 1px solid #e2e8f0;
+		border-radius: 0.6rem;
+		padding: 1rem 1.1rem;
+		background: #fafafa;
+		cursor: text;
+		font-size: 0.875rem;
+		line-height: 1.7;
+		color: #1e293b;
+		overflow-y: auto;
+		max-height: 420px;
+	}
+
+	/* Markdown rendered styles */
+	.notes-preview :global(h1),
+	.notes-preview :global(h2),
+	.notes-preview :global(h3) {
+		margin: 1rem 0 0.4rem;
+		font-family: 'Space Grotesk', 'Noto Sans Thai', sans-serif;
+		font-size: 0.95rem;
+		color: #0f172a;
+	}
+	.notes-preview :global(h1) { font-size: 1rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.3rem; }
+	.notes-preview :global(p) { margin: 0.3rem 0; }
+	.notes-preview :global(ul), .notes-preview :global(ol) { padding-left: 1.4rem; margin: 0.3rem 0; }
+	.notes-preview :global(li) { margin: 0.15rem 0; }
+	.notes-preview :global(strong) { font-weight: 700; color: #0f172a; }
+	.notes-preview :global(blockquote) {
+		border-left: 3px solid #6366f1;
+		margin: 0.5rem 0;
+		padding: 0.3rem 0.75rem;
+		background: rgba(99, 102, 241, 0.05);
+		border-radius: 0 0.4rem 0.4rem 0;
+		color: #334155;
+		font-style: italic;
+	}
+	.notes-preview :global(table) {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.82rem;
+		margin: 0.5rem 0;
+	}
+	.notes-preview :global(th) {
+		background: #f1f5f9;
+		padding: 0.4rem 0.6rem;
+		text-align: left;
+		font-weight: 600;
+		border: 1px solid #e2e8f0;
+	}
+	.notes-preview :global(td) {
+		padding: 0.35rem 0.6rem;
+		border: 1px solid #e2e8f0;
+		vertical-align: top;
+	}
+	.notes-preview :global(hr) { border: none; border-top: 1px solid #e2e8f0; margin: 0.75rem 0; }
+	.notes-preview :global(code) {
+		background: #f1f5f9;
+		padding: 0.1rem 0.35rem;
+		border-radius: 0.3rem;
+		font-size: 0.8rem;
+	}
+
 	.ai-plan-btn {
 		background: linear-gradient(135deg, #6366f1, #8b5cf6);
 		color: #fff;
@@ -2539,5 +2871,34 @@
 	.ai-plan-btn:disabled {
 		opacity: 0.55;
 		cursor: not-allowed;
+	}
+
+	.plan-context-input {
+		width: 100%;
+		padding: 0.45rem 0.7rem;
+		border: 1px solid #e2e8f0;
+		border-radius: 0.5rem;
+		font-size: 0.8rem;
+		color: #475569;
+		background: #f8fafc;
+		box-sizing: border-box;
+	}
+
+	.plan-context-input:focus {
+		outline: none;
+		border-color: #a5b4fc;
+		background: #fff;
+	}
+
+	.plan-context-input:disabled {
+		opacity: 0.5;
+	}
+
+	/* Auto-categorize */
+	.category-suggest-label {
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: #92400e;
+		white-space: nowrap;
 	}
 </style>

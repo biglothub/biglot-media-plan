@@ -15,7 +15,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 
 	const body = await request.json();
 	const updates: Record<string, unknown> = {};
-	for (const key of ['title', 'description', 'notes', 'status']) {
+	for (const key of ['title', 'description', 'notes', 'status', 'content_category']) {
 		if (body[key] !== undefined) updates[key] = body[key];
 	}
 

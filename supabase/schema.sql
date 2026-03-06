@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS public.idea_backlog (
   content_type  text NOT NULL DEFAULT 'video'
     CHECK (content_type IN ('video', 'post', 'image', 'live')),
   content_category text
-    CHECK (content_category IS NULL OR content_category IN ('hero', 'help', 'hub')),
+    CHECK (content_category IS NULL OR content_category IN ('hero', 'help', 'hub', 'pin')),
   title         text,
   description   text,
   author_name   text,

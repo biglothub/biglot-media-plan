@@ -454,6 +454,9 @@
 												{#if bl.view_count != null}
 													<p class="card-views">Views: {formatCount(bl.view_count)}</p>
 												{/if}
+												{#if bl.notes}
+													<p class="card-plan-snippet">📋 {bl.notes.slice(0, 80)}{bl.notes.length > 80 ? '…' : ''}</p>
+												{/if}
 											{:else}
 												<p class="card-code">Unknown</p>
 											{/if}
@@ -596,6 +599,7 @@
 						<label for="k-content-category">Content Category</label>
 						<select id="k-content-category" bind:value={detailContentCategory}>
 							<option value={null}>— ไม่ระบุ —</option>
+							<option value="pin">Pin</option>
 							<option value="hero">Hero</option>
 							<option value="help">Help</option>
 							<option value="hub">Hub</option>
@@ -817,6 +821,7 @@
 	.badge.approval { background: color-mix(in srgb, var(--approval-color) 14%, transparent); color: var(--approval-color); }
 	.card-status-row { display: flex; flex-wrap: wrap; gap: 0.2rem; margin-top: 0.15rem; }
 
+	.card-plan-snippet { margin: 0.2rem 0 0; font-size: 0.7rem; color: #7c3aed; line-height: 1.4; opacity: 0.85; }
 	.card-code { margin: 0; font-size: 0.72rem; font-weight: 700; color: #1d4ed8; text-transform: uppercase; letter-spacing: 0.05em; }
 	.card-title { margin: 0; font-size: 0.82rem; font-weight: 600; color: #0f172a; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 	.card-views, .card-date { margin: 0; font-size: 0.72rem; color: #64748b; }

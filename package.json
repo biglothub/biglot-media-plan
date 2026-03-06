@@ -26,6 +26,7 @@
 	},
 	"dependencies": {
 		"@supabase/supabase-js": "^2.98.0",
+		"marked": "^17.0.4",
 		"postgres": "^3.4.8"
 	}
 }

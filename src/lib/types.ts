@@ -1,6 +1,6 @@
 export type SupportedPlatform = 'youtube' | 'facebook' | 'instagram' | 'tiktok';
 export type BacklogContentType = 'video' | 'post' | 'image' | 'live';
-export type BacklogContentCategory = 'hero' | 'help' | 'hub';
+export type BacklogContentCategory = 'hero' | 'help' | 'hub' | 'pin';
 
 import type { TeamMember } from '$lib/team';
 export type { TeamMember } from '$lib/team';

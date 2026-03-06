@@ -21,7 +21,8 @@ export const contentTypeLabel: Record<BacklogContentType, string> = {
 export const contentCategoryLabel: Record<BacklogContentCategory, string> = {
 	hero: 'Hero',
 	help: 'Help',
-	hub: 'Hub'
+	hub: 'Hub',
+	pin: 'Pin'
 };
 
 export const PRODUCTION_STAGES: ProductionStage[] = [

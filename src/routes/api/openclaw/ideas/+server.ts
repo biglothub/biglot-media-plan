@@ -33,6 +33,7 @@ export const POST: RequestHandler = async ({ request, fetch }) => {
 		idea_code: generateIdeaCode(),
 		platform: body.platform ?? 'youtube',
 		content_type: body.content_type ?? 'video',
+		content_category: body.content_category ?? null,
 		title: body.title ?? null,
 		description: body.description ?? null,
 		author_name: body.author_name ?? null,
