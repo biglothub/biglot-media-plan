@@ -2,6 +2,7 @@
 	import { onMount, tick } from 'svelte';
 	import { hasSupabaseConfig, supabase } from '$lib/supabase';
 	import { TEAM_MEMBERS } from '$lib/team';
+	import { KanbanCard, Modal, Button, Spinner, toast } from '$lib';
 	import type {
 		IdeaBacklogRow,
 		ProductionCalendarRow,
@@ -30,8 +31,6 @@
 	// ── Data ────────────────────────────────────────────────────────────────
 	let calendarItems = $state<ProductionCalendarRow[]>([]);
 	let loading = $state(false);
-	let message = $state('');
-	let errorMessage = $state('');
 	let isTouchUi = $state(false);
 	let mobileStage = $state<ProductionStage>('planned');
 
@@ -56,6 +55,7 @@
 	const previewFacebookEmbed = $derived(previewUrl ? getFacebookEmbedUrl(previewUrl)  : null);
 
 	// ── Detail modal ─────────────────────────────────────────────────────────
+	let detailModalOpen = $state(false);
 	let detailItem = $state<ProductionCalendarRow | null>(null);
 	let detailNotes = $state('');
 	let detailShootDate = $state('');
@@ -145,7 +145,7 @@
 			.order('shoot_date', { ascending: true })
 			.order('created_at', { ascending: true });
 		loading = false;
-		if (error) { errorMessage = `โหลดข้อมูลไม่ได้: ${error.message}`; return; }
+		if (error) { toast.error(`โหลดข้อมูลไม่ได้: ${error.message}`); return; }
 		calendarItems = ((data ?? []).map((item) => {
 			const row = item as Record<string, unknown>;
 			return {
@@ -159,10 +159,9 @@
 	// ── Drag & drop ──────────────────────────────────────────────────────────
 	async function moveCard(calendarId: string, newStage: ProductionStage) {
 		if (!supabase) return;
-		errorMessage = '';
 		calendarItems = calendarItems.map((item) => item.id === calendarId ? { ...item, status: newStage } : item);
 		const { error } = await supabase.from('production_calendar').update({ status: newStage }).eq('id', calendarId);
-		if (error) { errorMessage = `อัปเดตสถานะไม่สำเร็จ: ${error.message}`; await loadCalendar(); }
+		if (error) { toast.error(`อัปเดตสถานะไม่สำเร็จ: ${error.message}`); await loadCalendar(); }
 	}
 
 	function handleDragStart(event: DragEvent, itemId: string) {
@@ -231,6 +230,7 @@
 	// ── Detail modal ──────────────────────────────────────────────────────────
 	function openDetail(item: ProductionCalendarRow) {
 		detailItem = item;
+		detailModalOpen = true;
 		detailNotes = item.notes ?? '';
 		detailShootDate = item.shoot_date ?? '';
 		detailStatus = (item.status as ProductionStage) ?? 'planned';
@@ -263,12 +263,11 @@
 		}
 	}
 
-	function closeDetail() { detailItem = null; }
+	function closeDetail() { detailModalOpen = false; detailItem = null; }
 
 	async function saveDetail() {
 		if (!supabase || !detailItem) return;
 		savingDetail = true;
-		errorMessage = '';
 		const calendarId = detailItem.id;
 		const backlogId = detailItem.backlog_id;
 
@@ -288,7 +287,7 @@
 			share_count: detailShares,
 			save_count: detailSaves
 		}).eq('id', backlogId);
-		if (blErr) { errorMessage = `บันทึก content info ไม่สำเร็จ: ${blErr.message}`; savingDetail = false; return; }
+		if (blErr) { toast.error(`บันทึก content info ไม่สำเร็จ: ${blErr.message}`); savingDetail = false; return; }
 
 		const { error: calErr } = await supabase.from('production_calendar').update({
 			shoot_date: detailShootDate,
@@ -301,7 +300,7 @@
 				: detailItem.submitted_at,
 			notes: detailNotes.trim() || null
 		}).eq('id', calendarId);
-		if (calErr) { errorMessage = `บันทึก calendar ไม่สำเร็จ: ${calErr.message}`; savingDetail = false; return; }
+		if (calErr) { toast.error(`บันทึก calendar ไม่สำเร็จ: ${calErr.message}`); savingDetail = false; return; }
 
 		await supabase.from('calendar_assignments').delete().eq('calendar_id', calendarId);
 		const toInsert = TEAM_MEMBERS.filter((m) => assignmentDraft[m].enabled).map((m) => ({
@@ -311,12 +310,11 @@
 		}));
 		if (toInsert.length > 0) {
 			const { error: aErr } = await supabase.from('calendar_assignments').insert(toInsert);
-			if (aErr) { errorMessage = `บันทึกหน้าที่ไม่สำเร็จ: ${aErr.message}`; savingDetail = false; return; }
+			if (aErr) { toast.error(`บันทึกหน้าที่ไม่สำเร็จ: ${aErr.message}`); savingDetail = false; return; }
 		}
 
 		savingDetail = false;
-		message = 'บันทึกเรียบร้อยแล้ว';
-		setTimeout(() => { message = ''; }, 4000);
+		toast.success('บันทึกเรียบร้อยแล้ว');
 		closeDetail();
 		await loadCalendar();
 	}
@@ -369,8 +367,6 @@
 	{#if !hasSupabaseConfig}
 		<p class="alert">ตั้งค่า env ก่อนใช้งาน: <code>PUBLIC_SUPABASE_URL</code> และ <code>PUBLIC_SUPABASE_ANON_KEY</code></p>
 	{/if}
-	{#if message}<p class="notice success">{message}</p>{/if}
-	{#if errorMessage}<p class="notice error">{errorMessage}</p>{/if}
 
 	<!-- Board + Preview side-by-side -->
 	<div class="kanban-root">
@@ -378,7 +374,7 @@
 		<!-- Board -->
 		<div class="board-wrap">
 			{#if loading}
-				<p class="loading">กำลังโหลด...</p>
+				<div class="loading"><Spinner size="lg" label="กำลังโหลด Kanban..." /></div>
 			{:else}
 				{#if isTouchUi}
 					<div class="mobile-stage-strip" aria-label="Select stage">
@@ -420,91 +416,23 @@
 									<div class="col-empty">ยังไม่มีรายการ</div>
 								{/if}
 								{#each cards as item}
-									{@const bl = item.idea_backlog}
-									<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
-									<div
-										class="card stage--{item.status || 'planned'} {previewItem?.id === item.id ? 'card--active' : ''}"
-										draggable={!isTouchUi}
-										role="button"
-										tabindex="0"
-										ondragstart={(e) => !isTouchUi && handleDragStart(e, item.id)}
-										ondragend={() => { draggingItemId = null; dragHoverStage = null; }}
-										onclick={(e) => openPreview(item, e)}
-										onkeydown={(e) => {
-											if (e.key === 'Enter' || e.key === ' ') {
-												e.preventDefault();
-												openPreview(item, e as unknown as MouseEvent);
-											}
-										}}
-									>
-										{#if bl?.thumbnail_url}
-											<img class="card-thumb" src={bl.thumbnail_url} alt={bl.title ?? 'thumbnail'} />
-										{/if}
-										<div class="card-body">
-											{#if bl}
-												<div class="card-meta">
-													<span class="badge platform">{platformLabel[bl.platform] ?? bl.platform}</span>
-													<span class="badge content-type">{contentTypeLabel[bl.content_type] ?? bl.content_type}</span>
-													{#if bl.content_category}
-														<span class="badge content-category">{contentCategoryLabel[bl.content_category] ?? bl.content_category}</span>
-													{/if}
-												</div>
-												<p class="card-code">{backlogCode(bl)}</p>
-												<p class="card-title">{bl.title ?? 'Untitled'}</p>
-												{#if bl.view_count != null}
-													<p class="card-views">Views: {formatCount(bl.view_count)}</p>
-												{/if}
-												{#if bl.notes}
-													<p class="card-plan-snippet">📋 {bl.notes.slice(0, 80)}{bl.notes.length > 80 ? '…' : ''}</p>
-												{/if}
-											{:else}
-												<p class="card-code">Unknown</p>
-											{/if}
-											{#if item.shoot_date}
-												<p class="card-date">{formatCalendarDate(item.shoot_date)}</p>
-											{/if}
-											{#if item.publish_deadline}
-												<p class="card-deadline {item.publish_deadline < new Date().toISOString().slice(0, 10) && item.status !== 'published' ? 'overdue' : ''}">
-													Deadline: {formatCalendarDate(item.publish_deadline)}
-												</p>
-											{/if}
-											<div class="card-status-row">
-												{#if (item.revision_count ?? 0) > 0}
-													<span class="badge revision {(item.revision_count ?? 0) >= 2 ? 'revision--warn' : ''}">
-														Rev {item.revision_count ?? 0}
-													</span>
-												{/if}
-												{#if item.approval_status && item.approval_status !== 'draft'}
-													<span class="badge approval" style="--approval-color:{approvalStatusColor[item.approval_status as ApprovalStatus]}">
-														{approvalStatusLabel[item.approval_status as ApprovalStatus]}
-													</span>
-												{/if}
-											</div>
-											{#if (item.calendar_assignments ?? []).length > 0}
-												<div class="card-members">
-													{#each item.calendar_assignments ?? [] as a}
-														<span class="badge member">{a.member_name}</span>
-													{/each}
-												</div>
-											{/if}
-										</div>
-										<div class="card-actions">
-											{#if isTouchUi}
-												<select
-													class="quick-stage-select"
-													value={item.status || 'planned'}
-													onclick={(e) => e.stopPropagation()}
-													onchange={(e) => handleQuickStageChange(item.id, e)}
-												>
-													{#each PRODUCTION_STAGES as quickStage}
-														<option value={quickStage}>{stageLabel[quickStage]}</option>
-													{/each}
-												</select>
-											{/if}
-											<button class="btn-detail" onclick={(e) => { e.stopPropagation(); openDetail(item); }}>Detail</button>
-										</div>
-									</div>
-								{/each}
+								<KanbanCard
+									{item}
+									code={backlogCode(item.idea_backlog ?? { id: item.id, idea_code: '' })}
+									isActive={previewItem?.id === item.id}
+									{isTouchUi}
+									draggable={!isTouchUi}
+									{approvalStatusColor}
+									{approvalStatusLabel}
+									{formatCount}
+									formatDate={formatCalendarDate}
+									onclick={(e) => openPreview(item, e)}
+									ondragstart={(e) => { if (!isTouchUi) handleDragStart(e, item.id); }}
+									ondragend={() => { draggingItemId = null; dragHoverStage = null; }}
+									ondetail={() => openDetail(item)}
+									onstagechange={(id, s) => void moveCard(id, s as ProductionStage)}
+								/>
+							{/each}
 							</div>
 						</div>
 					{/each}
@@ -561,18 +489,7 @@
 </main>
 
 <!-- Detail modal -->
-{#if detailItem}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="modal-overlay" onclick={closeDetail} onkeydown={(e) => e.key === 'Escape' && closeDetail()}>
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="modal-box" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
-			<div class="modal-header">
-				<div>
-					<p class="modal-code">{detailItem.idea_backlog ? backlogCode(detailItem.idea_backlog) : 'Unknown'}</p>
-					<h3>{detailTitle || 'Untitled'}</h3>
-				</div>
-				<button class="btn-ghost" onclick={closeDetail}>✕</button>
-			</div>
+<Modal bind:open={detailModalOpen} title={detailTitle || 'Untitled'} size="md" onclose={closeDetail}>
 
 			<section class="modal-section">
 				<h4 class="section-title">Content Info</h4>
@@ -702,32 +619,29 @@
 				<textarea class="notes-input" placeholder="รายละเอียดเพิ่มเติม..." rows="3" bind:value={detailNotes}></textarea>
 			</section>
 
-			<div class="modal-footer">
-				<button class="btn-save" onclick={saveDetail} disabled={savingDetail}>{savingDetail ? 'Saving...' : 'Save'}</button>
-				<button class="btn-ghost" onclick={closeDetail}>Cancel</button>
-			</div>
-		</div>
-	</div>
-{/if}
+	{#snippet footer()}
+		<Button variant="primary" onclick={saveDetail} loading={savingDetail}>Save</Button>
+		<Button variant="ghost" onclick={closeDetail}>Cancel</Button>
+	{/snippet}
+</Modal>
 
 <style>
-	h1, h3, h4 { font-family: 'Space Grotesk', 'Noto Sans Thai', sans-serif; }
+	h1, h3, h4 { font-family: var(--font-heading); }
 
 	.page { display: grid; gap: 1rem; }
 
 	.hero { text-align: center; padding: 1.2rem 0 0.2rem; }
 	.hero h1 { margin: 0.4rem 0; font-size: clamp(1.8rem, 4.4vw, 2.7rem); }
-	.hero p { margin: 0; color: #475569; }
+	.hero p { margin: 0; color: var(--color-slate-600); }
 
 	.kicker {
 		margin: 0; font-size: 0.78rem; text-transform: uppercase;
-		letter-spacing: 0.16em; color: #1d4ed8; font-weight: 700;
+		letter-spacing: 0.16em; color: var(--color-primary); font-weight: 700;
 	}
 
 	.alert, .notice { padding: 0.8rem 0.95rem; border-radius: 0.8rem; font-size: 0.9rem; }
-	.notice.success { background: rgba(22,163,74,0.12); color: #166534; border: 1px solid rgba(22,163,74,0.22); }
-	.notice.error, .alert { background: rgba(220,38,38,0.1); color: #991b1b; border: 1px solid rgba(220,38,38,0.2); }
-	.loading { text-align: center; color: #64748b; padding: 2rem; }
+
+	.loading { text-align: center; color: var(--color-slate-500); padding: 2rem; }
 
 	/* ── Layout ── */
 	.kanban-root {
@@ -774,79 +688,18 @@
 		padding: 0.7rem 0.9rem; background: var(--col-header-bg);
 		border-radius: 0.85rem 0.85rem 0 0; gap: 0.5rem;
 	}
-	.col-title { font-weight: 700; font-size: 0.88rem; color: var(--col-color); font-family: 'Space Grotesk', 'Noto Sans Thai', sans-serif; }
+	.col-title { font-weight: 700; font-size: 0.88rem; color: var(--col-color); font-family: var(--font-heading); }
 	.col-count {
-		padding: 0.12rem 0.55rem; border-radius: 999px; font-size: 0.72rem; font-weight: 700;
+		padding: 0.12rem 0.55rem; border-radius: var(--radius-full); font-size: 0.72rem; font-weight: 700;
 		background: color-mix(in srgb, var(--col-color) 15%, transparent); color: var(--col-color);
 	}
 	.col-body { display: grid; gap: 0.6rem; padding: 0.75rem; align-content: start; }
 	.col-empty {
-		padding: 1rem 0.5rem; text-align: center; color: #94a3b8; font-size: 0.82rem;
+		padding: 1rem 0.5rem; text-align: center; color: var(--color-slate-400); font-size: 0.82rem;
 		border: 1.5px dashed rgba(148,163,184,0.45); border-radius: 0.75rem;
 	}
 
-	/* ── Card ── */
-	.card {
-		background: #fff;
-		border-radius: 0.8rem;
-		border: 1px solid rgba(15,23,42,0.09);
-		border-left: 3px solid #94a3b8;
-		display: grid;
-		cursor: grab;
-		transition: box-shadow 0.15s, transform 0.1s;
-		overflow: hidden;
-	}
-	.card:active { cursor: grabbing; transform: scale(0.98); }
-	.card:hover { box-shadow: 0 4px 12px rgba(15,23,42,0.1); }
-	.card--active { outline: 2px solid #3b82f6; outline-offset: 1px; }
 
-	.card.stage--planned   { border-left-color: #94a3b8; }
-	.card.stage--scripting { border-left-color: #8b5cf6; }
-	.card.stage--shooting  { border-left-color: #f59e0b; }
-	.card.stage--editing   { border-left-color: #3b82f6; }
-	.card.stage--review    { border-left-color: #ea580c; }
-	.card.stage--published { border-left-color: #16a34a; }
-
-	.card-thumb { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; border-bottom: 1px solid rgba(15,23,42,0.06); }
-	.card-body { padding: 0.6rem 0.75rem 0.35rem; display: grid; gap: 0.2rem; }
-	.card-meta { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.15rem; }
-
-	.badge { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 999px; font-size: 0.65rem; font-weight: 700; }
-	.badge.platform { background: rgba(180,83,9,0.12); color: #92400e; }
-	.badge.content-type { background: rgba(100,116,139,0.12); color: #475569; }
-	.badge.content-category { background: rgba(99,102,241,0.12); color: #4f46e5; }
-	.badge.member { background: rgba(37,99,235,0.12); color: #1d4ed8; }
-	.badge.revision { background: rgba(251,191,36,0.18); color: #92400e; }
-	.badge.revision--warn { background: rgba(220,38,38,0.14); color: #b91c1c; }
-	.badge.approval { background: color-mix(in srgb, var(--approval-color) 14%, transparent); color: var(--approval-color); }
-	.card-status-row { display: flex; flex-wrap: wrap; gap: 0.2rem; margin-top: 0.15rem; }
-
-	.card-plan-snippet { margin: 0.2rem 0 0; font-size: 0.7rem; color: #7c3aed; line-height: 1.4; opacity: 0.85; }
-	.card-code { margin: 0; font-size: 0.72rem; font-weight: 700; color: #1d4ed8; text-transform: uppercase; letter-spacing: 0.05em; }
-	.card-title { margin: 0; font-size: 0.82rem; font-weight: 600; color: #0f172a; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-	.card-views, .card-date { margin: 0; font-size: 0.72rem; color: #64748b; }
-	.card-deadline { margin: 0; font-size: 0.72rem; color: #b45309; }
-	.card-deadline.overdue { color: #b91c1c; font-weight: 700; background: rgba(220,38,38,0.08); padding: 0.12rem 0.4rem; border-radius: 0.35rem; }
-	.card-members { display: flex; flex-wrap: wrap; gap: 0.2rem; margin-top: 0.15rem; }
-
-	.card-actions { padding: 0.35rem 0.75rem 0.55rem; display: flex; justify-content: flex-end; }
-	.quick-stage-select {
-		display: none;
-		border: 1px solid rgba(15,23,42,0.14);
-		background: #fff;
-		border-radius: 0.55rem;
-		padding: 0.34rem 0.5rem;
-		font: inherit;
-		font-size: 0.76rem;
-		color: #334155;
-		max-width: 100%;
-	}
-	.btn-detail {
-		border: 0; background: rgba(37,99,235,0.1); color: #1d4ed8;
-		border-radius: 0.45rem; font-size: 0.68rem; font-weight: 700;
-		padding: 0.2rem 0.5rem; cursor: pointer;
-	}
-	.btn-detail:hover { background: rgba(37,99,235,0.18); }
 
 	/* ── Preview Panel ── */
 	.preview-panel {
@@ -854,7 +707,7 @@
 		z-index: 200;
 		max-height: calc(100vh - var(--preview-top, 1rem) - 1rem);
 		overflow-y: auto;
-		background: #fff;
+		background: var(--color-bg-elevated);
 		border-radius: 1rem;
 		border: 1px solid rgba(15,23,42,0.1);
 		padding: 1.1rem;
@@ -867,7 +720,7 @@
 
 	.preview-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.6rem; }
 	.preview-title h3 { margin: 0; font-size: 0.95rem; line-height: 1.3; }
-	.preview-code { margin: 0 0 0.2rem; font-size: 0.72rem; font-weight: 700; color: #1d4ed8; text-transform: uppercase; letter-spacing: 0.05em; }
+	.preview-code { margin: 0 0 0.2rem; font-size: 0.72rem; font-weight: 700; color: var(--color-primary); text-transform: uppercase; letter-spacing: 0.05em; }
 	.preview-actions { display: flex; gap: 0.35rem; flex-shrink: 0; }
 
 	.preview-embed { border-radius: 0.6rem; overflow: hidden; background: #000; }
@@ -875,41 +728,34 @@
 	.preview-panel.landscape .preview-embed iframe { height: 236px; }
 	.preview-panel.portrait  .preview-embed iframe { height: 540px; }
 	.preview-embed img { width: 100%; display: block; }
-	.preview-empty { padding: 2.5rem; text-align: center; color: #94a3b8; font-size: 0.88rem; }
+	.preview-empty { padding: 2.5rem; text-align: center; color: var(--color-slate-400); font-size: 0.88rem; }
 
 	/* ── Shared button ── */
 	.btn-ghost {
 		border: 1px solid rgba(37,99,235,0.25); background: rgba(37,99,235,0.08);
-		color: #1d4ed8; padding: 0.38rem 0.7rem; border-radius: 0.6rem;
+		color: var(--color-primary); padding: 0.38rem 0.7rem; border-radius: 0.6rem;
 		font-weight: 700; font-size: 0.8rem; cursor: pointer; text-decoration: none;
 	}
 	.btn-ghost:hover { background: rgba(37,99,235,0.14); }
 
 	/* ── Detail Modal ── */
-	.modal-overlay {
-		position: fixed; inset: 0; z-index: 1000;
-		background: rgba(0,0,0,0.45); display: grid; place-items: center; padding: 1rem;
-	}
 	.modal-box {
-		background: #fff; border-radius: 1rem; padding: 1.5rem;
-		width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; display: grid; gap: 1rem;
+		max-width: 480px;
 	}
-	.modal-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
-	.modal-header h3 { margin: 0; font-size: 1.05rem; }
-	.modal-code { margin: 0 0 0.2rem; font-size: 0.75rem; font-weight: 700; color: #1d4ed8; text-transform: uppercase; letter-spacing: 0.06em; }
+
 
 	.modal-section { display: grid; gap: 0.65rem; padding-bottom: 0.8rem; border-bottom: 1px solid rgba(15,23,42,0.07); }
 	.modal-section:last-of-type { border-bottom: none; padding-bottom: 0; }
-	.section-title { margin: 0; font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; }
+	.section-title { margin: 0; font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-slate-500); }
 
 	.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
 	.form-field { display: grid; gap: 0.3rem; }
-	.form-field label { font-size: 0.78rem; font-weight: 600; color: #475569; }
+	.form-field label { font-size: 0.78rem; font-weight: 600; color: var(--color-slate-600); }
 	.form-field input, .form-field select {
 		width: 100%; box-sizing: border-box; font: inherit; font-size: 0.85rem;
-		padding: 0.42rem 0.6rem; border: 1px solid rgba(15,23,42,0.15); border-radius: 0.55rem; background: #fff;
+		padding: 0.42rem 0.6rem; border: 1px solid rgba(15,23,42,0.15); border-radius: 0.55rem; background: var(--color-bg-elevated);
 	}
-	.form-field input:focus, .form-field select:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
+	.form-field input:focus, .form-field select:focus { outline: none; border-color: var(--color-blue-600); box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
 
 	.metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; }
 
@@ -918,14 +764,12 @@
 	.member-toggle { display: flex; align-items: center; gap: 0.45rem; cursor: pointer; }
 	.member-name { font-weight: 700; font-size: 0.9rem; }
 	.role-input { width: 100%; padding: 0.4rem 0.6rem; border: 1px solid rgba(15,23,42,0.15); border-radius: 0.55rem; font-size: 0.85rem; font-family: inherit; box-sizing: border-box; }
-	.role-input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
+	.role-input:focus { outline: none; border-color: var(--color-blue-600); box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
 
 	.notes-input { width: 100%; padding: 0.5rem 0.6rem; border: 1px solid rgba(15,23,42,0.15); border-radius: 0.55rem; font-size: 0.85rem; font-family: inherit; box-sizing: border-box; resize: vertical; }
-	.notes-input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
+	.notes-input:focus { outline: none; border-color: var(--color-blue-600); box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
 
-	.modal-footer { display: flex; gap: 0.5rem; justify-content: flex-end; }
-	.btn-save { border: 0; background: #1d4ed8; color: #fff; padding: 0.5rem 1.2rem; border-radius: 0.65rem; font-weight: 700; font-size: 0.85rem; cursor: pointer; }
-	.btn-save:disabled { opacity: 0.6; cursor: not-allowed; }
+
 
 	.revision-warn { color: #b91c1c; font-size: 0.72rem; font-weight: 700; margin-left: 0.3rem; }
 
@@ -940,13 +784,13 @@
 
 		.mobile-stage-strip button {
 			border: 1px solid rgba(15,23,42,0.08);
-			background: #fff;
+			background: var(--color-bg-elevated);
 			border-radius: 0.85rem;
 			padding: 0.6rem 0.7rem;
 			display: grid;
 			gap: 0.15rem;
 			text-align: left;
-			color: #334155;
+			color: var(--color-slate-700);
 			font: inherit;
 			cursor: pointer;
 		}
@@ -964,7 +808,7 @@
 
 		.mobile-stage-strip strong {
 			font-size: 1rem;
-			font-family: 'Space Grotesk', 'Noto Sans Thai', sans-serif;
+			font-family: var(--font-heading);
 		}
 
 		.board--mobile {
@@ -976,22 +820,6 @@
 			min-height: 0;
 		}
 
-		.card {
-			cursor: pointer;
-		}
-
-		.card-actions {
-			padding-top: 0;
-			justify-content: stretch;
-			gap: 0.45rem;
-		}
-
-		.quick-stage-select,
-		.btn-detail {
-			display: block;
-			flex: 1;
-			width: 100%;
-		}
 
 		.preview-panel--mobile {
 			position: fixed;
@@ -1010,18 +838,6 @@
 
 		.preview-panel--mobile .preview-embed iframe {
 			height: min(48vh, 22rem);
-		}
-
-		.modal-overlay {
-			padding: 0;
-			place-items: end stretch;
-		}
-
-		.modal-box {
-			max-width: none;
-			max-height: 92vh;
-			border-radius: 1.2rem 1.2rem 0 0;
-			padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
 		}
 
 		.form-row,
