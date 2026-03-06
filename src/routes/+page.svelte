@@ -813,6 +813,7 @@
 			if (res.ok && data.plan) {
 				editForm.notes = data.plan;
 				notesViewMode = 'preview';
+				await saveEdit();
 			} else {
 				planError = data.error ?? 'Generate plan ไม่สำเร็จ';
 			}
