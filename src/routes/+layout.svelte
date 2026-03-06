@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import favicon from '$lib/assets/favicon.svg';
 	import { page } from '$app/state';
 
@@ -22,6 +23,11 @@
 		if (href === '/') return pathname === '/';
 		return pathname === href || pathname.startsWith(`${href}/`);
 	}
+
+	onMount(() => {
+		if (!('serviceWorker' in navigator)) return;
+		void navigator.serviceWorker.register('/service-worker.js');
+	});
 </script>
 
 <svelte:head>

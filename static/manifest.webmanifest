@@ -1,0 +1,52 @@
+{
+  "name": "BigLot Media Plan",
+  "short_name": "BigLot",
+  "description": "BigLot Media Plan for idea backlog, production kanban, and shoot calendar on iPhone and Android.",
+  "lang": "th",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8fafc",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Idea Backlog",
+      "short_name": "Backlog",
+      "url": "/",
+      "description": "Open idea backlog"
+    },
+    {
+      "name": "Kanban Board",
+      "short_name": "Kanban",
+      "url": "/kanban",
+      "description": "Open production kanban"
+    },
+    {
+      "name": "Shoot Calendar",
+      "short_name": "Calendar",
+      "url": "/calendar",
+      "description": "Open shoot calendar"
+    }
+  ]
+}
