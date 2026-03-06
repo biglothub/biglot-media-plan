@@ -208,6 +208,23 @@
 		return code ? code : `BL-${idea.id.slice(0, 8).toUpperCase()}`;
 	}
 
+	function plainTextContent(value: string): string {
+		return value
+			.replace(/```[\s\S]*?```/g, " ")
+			.replace(/`([^`]+)`/g, "$1")
+			.replace(/!\[[^\]]*\]\([^)]+\)/g, " ")
+			.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
+			.replace(/^#{1,6}\s+/gm, "")
+			.replace(/^\s*>\s?/gm, "")
+			.replace(/^\s*[-*+]\s+/gm, "")
+			.replace(/^\s*\d+\.\s+/gm, "")
+			.replace(/\*\*([^*]+)\*\*/g, "$1")
+			.replace(/__([^_]+)__/g, "$1")
+			.replace(/[*_~|]/g, " ")
+			.replace(/\s+/g, " ")
+			.trim();
+	}
+
 	function scrollToTop() {
 		window.scrollTo({ top: 0, behavior: "smooth" });
 	}
@@ -1209,6 +1226,8 @@
 									idea.platform === "instagram" && idea.url
 										? getInstagramEmbedUrl(idea.url)
 										: null}
+								{@const notesText =
+									idea.notes ? plainTextContent(idea.notes) : null}
 								<article
 									class={`card ${platformFrameClass(idea.platform)}`}
 									oncontextmenu={(event) => openContextMenu(event, idea)}
@@ -1274,8 +1293,10 @@
 										<p class="idea-title">
 											{idea.title ?? "Untitled idea"}
 										</p>
-										{#if idea.notes}
-											<p class="notes">{idea.notes}</p>
+										{#if notesText}
+											<div class="notes-wrap">
+												<p class="notes" title={notesText}>{notesText}</p>
+											</div>
 										{/if}
 
 										{#if idea.url}
@@ -1939,12 +1960,36 @@
 		margin: 0;
 		font-size: 0.84rem;
 		color: #475569;
+		line-height: 1.45;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	.notes-wrap {
+		max-height: 5.9rem;
+		overflow-y: auto;
+		padding-right: 0.25rem;
+		scrollbar-width: thin;
+		scrollbar-color: rgba(148, 163, 184, 0.7) transparent;
+	}
+
+	.notes-wrap::-webkit-scrollbar {
+		width: 0.35rem;
+	}
+
+	.notes-wrap::-webkit-scrollbar-thumb {
+		background: rgba(148, 163, 184, 0.7);
+		border-radius: 999px;
 	}
 
 	.notes {
 		margin: 0;
 		font-size: 0.85rem;
 		color: #475569;
+		line-height: 1.55;
 	}
 
 	.link {
