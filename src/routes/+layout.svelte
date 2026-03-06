@@ -7,8 +7,7 @@
 	const menus = [
 		{ href: '/', label: 'Backlog', shortLabel: 'Ideas' },
 		{ href: '/kanban', label: 'Kanban', shortLabel: 'Plan' },
-		{ href: '/calendar', label: 'Shoot Calendar', shortLabel: 'Calendar' },
-		{ href: '/dashboard', label: 'Dashboard', shortLabel: 'KPI' }
+		{ href: '/calendar', label: 'Shoot Calendar', shortLabel: 'Calendar' }
 	];
 
 	const pageTitle = $derived.by(() => {
@@ -205,7 +204,7 @@
 			bottom: 0;
 			z-index: 40;
 			display: grid;
-				grid-template-columns: repeat(4, minmax(0, 1fr));
+				grid-template-columns: repeat(3, minmax(0, 1fr));
 			gap: 0.35rem;
 			padding:
 				0.6rem
