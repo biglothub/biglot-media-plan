@@ -2179,13 +2179,15 @@
 
 	.modal-box {
 		position: fixed;
-		inset: 0;
+		top: 1rem;
+		left: 50%;
+		transform: translateX(-50%);
 		z-index: 1000;
-		margin: auto;
-		width: 100%;
-		max-width: 560px;
-		max-height: 90vh;
+		width: min(560px, calc(100vw - 2rem));
+		max-height: calc(100vh - 2rem);
 		overflow-y: auto;
+		overscroll-behavior: contain;
+		-webkit-overflow-scrolling: touch;
 		background: #fff;
 		border-radius: 1rem;
 		padding: 1.5rem;
@@ -2413,7 +2415,9 @@
 		}
 
 		.modal-box {
-			max-height: 95vh;
+			top: 0.75rem;
+			width: min(560px, calc(100vw - 1.5rem));
+			max-height: calc(100vh - 1.5rem);
 			border-radius: 0.75rem;
 		}
 	}
@@ -2456,9 +2460,13 @@
 		}
 
 		.modal-box {
-			inset: auto 0 0;
+			top: auto;
+			left: 0;
+			right: 0;
+			transform: none;
 			max-width: none;
 			max-height: 92vh;
+			width: 100%;
 			border-radius: 1rem 1rem 0 0;
 			padding-bottom: calc(1.4rem + env(safe-area-inset-bottom, 0px));
 		}
