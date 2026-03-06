@@ -26,7 +26,7 @@ ${CONTENT_PLAN_FORMAT}`;
 				{ role: 'system', content: CREATOR_SYSTEM_PROMPT },
 				{ role: 'user', content: userPrompt }
 			],
-			{ temperature: 0.75, max_tokens: 2000, timeout_ms: 300_000 }
+			{ temperature: 0.75, max_tokens: 4000, timeout_ms: 300_000 }
 		);
 
 		return json({ plan });

@@ -115,6 +115,7 @@
 	// AI Content Plan state (used in Edit modal)
 	let generatingPlan = $state(false);
 	let planContext = $state('');
+	let planError = $state('');
 	let showPlanExpanded = $state(false);
 
 	// AI Auto-categorize state
@@ -795,6 +796,7 @@
 		}
 
 		generatingPlan = true;
+		planError = '';
 		try {
 			const res = await fetch('/api/openclaw/ai/content-plan', {
 				method: 'POST',
@@ -812,10 +814,10 @@
 				editForm.notes = data.plan;
 				notesViewMode = 'preview';
 			} else {
-				errorMessage = data.error ?? 'Generate plan ไม่สำเร็จ';
+				planError = data.error ?? 'Generate plan ไม่สำเร็จ';
 			}
 		} catch {
-			errorMessage = 'เชื่อมต่อ AI ไม่ได้';
+			planError = 'เชื่อมต่อ AI ไม่ได้';
 		}
 		generatingPlan = false;
 	}
@@ -1674,6 +1676,9 @@
 					<div class="suggest-progress-track" style="margin-bottom: 0.4rem;">
 						<div class="suggest-progress-bar"></div>
 					</div>
+				{/if}
+				{#if planError}
+					<p class="plan-error">{planError}</p>
 				{/if}
 				{#if notesViewMode === 'preview' && editForm.notes}
 					<div class="notes-preview-wrap">
@@ -3013,6 +3018,16 @@
 		padding: 0.1rem 0.35rem;
 		border-radius: 0.3rem;
 		font-size: 0.8rem;
+	}
+
+	.plan-error {
+		margin: 0.25rem 0 0;
+		padding: 0.5rem 0.75rem;
+		background: #fef2f2;
+		border: 1px solid #fca5a5;
+		border-radius: 0.45rem;
+		font-size: 0.8rem;
+		color: #b91c1c;
 	}
 
 	.ai-plan-btn {
