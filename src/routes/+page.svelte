@@ -102,11 +102,15 @@
 		content_category: SuggestedContentCategory;
 		reason: string;
 	};
+	let showSuggestModeModal = $state(false);
+	let showCustomPromptModal = $state(false);
 	let showSuggestModal = $state(false);
 	let suggestLoading = $state(false);
 	let suggestions = $state<IdeaSuggestion[]>([]);
 	let suggestError = $state('');
 	let acceptingIndex = $state<number | null>(null);
+	let customPrompt = $state('');
+	let customPromptError = $state('');
 
 	// AI Content Plan state (used in Edit modal)
 	let generatingPlan = $state(false);
@@ -834,6 +838,29 @@
 		suggestLoading = false;
 	}
 
+	async function suggestIdeasWithPrompt(prompt: string) {
+		showSuggestModal = true;
+		suggestLoading = true;
+		suggestError = '';
+		suggestions = [];
+		try {
+			const res = await fetch('/api/openclaw/ai/suggest-ideas', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ prompt })
+			});
+			const body = await res.json();
+			if (!res.ok) {
+				suggestError = body.error ?? 'เกิดข้อผิดพลาด';
+			} else {
+				suggestions = body.suggestions ?? [];
+			}
+		} catch {
+			suggestError = 'เชื่อมต่อ AI ไม่ได้ กรุณาลองใหม่';
+		}
+		suggestLoading = false;
+	}
+
 	async function acceptSuggestion(s: IdeaSuggestion, index: number) {
 		acceptingIndex = index;
 		try {
@@ -963,7 +990,7 @@
 			<button class="primary" onclick={analyzeLink} disabled={enriching}>
 				{enriching ? "Analyzing..." : "Analyze Link"}
 			</button>
-			<button class="ai-suggest-btn" onclick={suggestIdeas} disabled={suggestLoading}>
+			<button class="ai-suggest-btn" onclick={() => { showSuggestModeModal = true; customPrompt = ''; }} disabled={suggestLoading}>
 				✦ ช่วยคิด idea
 			</button>
 		</div>
@@ -1394,6 +1421,94 @@
 					{scheduling ? 'Scheduling...' : 'Schedule'}
 				</button>
 				<button class="ctx-cancel" onclick={closeContextMenu}>Cancel</button>
+			</div>
+		</div>
+	{/if}
+
+	{#if showSuggestModeModal}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="modal-overlay" onclick={() => { showSuggestModeModal = false; }} onkeydown={(e) => { if (e.key === 'Escape') showSuggestModeModal = false; }}></div>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="modal-box" onclick={(e) => e.stopPropagation()} onkeydown={() => {}} style="max-width: 480px;">
+			<div class="modal-header">
+				<div class="modal-title">
+					<p class="modal-code">ช่วยคิด IDEA</p>
+					<h3>เลือกวิธีการ</h3>
+				</div>
+				<button class="modal-close" onclick={() => { showSuggestModeModal = false; }}>✕</button>
+			</div>
+
+			<div style="display: grid; gap: 0.8rem;">
+				<button
+					class="primary"
+					onclick={() => {
+						showSuggestModeModal = false;
+						suggestIdeas();
+					}}
+				>
+					✦ ให้ AI เสนอแนะ (Suggest Ideas)
+				</button>
+				<button
+					class="modal-cancel"
+					onclick={() => {
+						showSuggestModeModal = false;
+						showCustomPromptModal = true;
+						customPrompt = '';
+						customPromptError = '';
+					}}
+					style="background: rgba(99, 102, 241, 0.08); color: #4f46e5; border: 1px solid rgba(99, 102, 241, 0.2);"
+				>
+					✏️ พิมพ์ prompt เอง (Manual)
+				</button>
+			</div>
+		</div>
+	{/if}
+
+	{#if showCustomPromptModal}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="modal-overlay" onclick={() => { showCustomPromptModal = false; }} onkeydown={(e) => { if (e.key === 'Escape') showCustomPromptModal = false; }}></div>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="modal-box" onclick={(e) => e.stopPropagation()} onkeydown={() => {}} style="max-width: 520px;">
+			<div class="modal-header">
+				<div class="modal-title">
+					<p class="modal-code">CUSTOM PROMPT</p>
+					<h3>พิมพ์ได้ตามใจ</h3>
+				</div>
+				<button class="modal-close" onclick={() => { showCustomPromptModal = false; }}>✕</button>
+			</div>
+
+			<div style="display: grid; gap: 0.6rem;">
+				<label style="font-size: 0.9rem; color: #475569;">
+					ป้อน prompt เพื่อให้ AI เสนอ idea ตามที่ต้องการ
+				</label>
+				<textarea
+					bind:value={customPrompt}
+					placeholder="เช่น 'ช่วยคิด idea สำหรับ TikTok เกี่ยวกับ forex trading tips' หรือ 'idea สำหรับ YouTube Shorts เรื่องการ์ตูน'"
+					rows={5}
+					style="max-height: 200px; overflow-y: auto;"
+				></textarea>
+				{#if customPromptError}
+					<p class="notice error" style="margin: 0;">{customPromptError}</p>
+				{/if}
+			</div>
+
+			<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-top: 0.8rem;">
+				<button class="modal-cancel" onclick={() => { showCustomPromptModal = false; }}>
+					Cancel
+				</button>
+				<button
+					class="primary"
+					onclick={async () => {
+						if (!customPrompt.trim()) {
+							customPromptError = 'กรุณากรอก prompt';
+							return;
+						}
+						showCustomPromptModal = false;
+						await suggestIdeasWithPrompt(customPrompt.trim());
+					}}
+				>
+					ส่ง Prompt
+				</button>
 			</div>
 		</div>
 	{/if}

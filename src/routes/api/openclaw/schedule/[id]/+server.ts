@@ -1,5 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import { PRODUCTION_STAGES } from '$lib/media-plan';
 import { supabase } from '$lib/supabase';
 
 export const PATCH: RequestHandler = async ({ params, request }) => {
@@ -8,9 +9,8 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 	const body = await request.json();
 	if (!body.status) return json({ error: 'status is required' }, { status: 400 });
 
-	const valid = ['planned', 'scripting', 'shooting', 'editing', 'published'];
-	if (!valid.includes(body.status)) {
-		return json({ error: `status must be one of: ${valid.join(', ')}` }, { status: 400 });
+	if (!PRODUCTION_STAGES.includes(body.status)) {
+		return json({ error: `status must be one of: ${PRODUCTION_STAGES.join(', ')}` }, { status: 400 });
 	}
 
 	const { data, error } = await supabase
