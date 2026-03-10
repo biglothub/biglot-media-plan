@@ -174,7 +174,7 @@
 			? getYouTubeEmbedUrl(draft.url)
 			: null,
 	);
-	const contentTypeOptions = ["video", "post", "image"] as const;
+	const contentTypeOptions = ["video", "post", "image", "live"] as const;
 	const platformOptions = platformOrder as readonly SupportedPlatform[];
 
 

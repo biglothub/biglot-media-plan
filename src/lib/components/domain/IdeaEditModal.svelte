@@ -41,7 +41,7 @@
 		...CONTENT_CATEGORY_ORDER.map((cat) => ({ value: cat as BacklogContentCategory, label: contentCategoryLabel[cat] })),
 	];
 
-	const contentTypeOptions = ['video', 'post', 'image'] as const;
+	const contentTypeOptions = ['video', 'post', 'image', 'live'] as const;
 
 	type EditForm = {
 		url: string;
