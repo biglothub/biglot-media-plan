@@ -95,8 +95,7 @@
 			calc(0.8rem + env(safe-area-inset-top, 0px))
 			var(--side-padding)
 			var(--space-3);
-		background:
-			linear-gradient(180deg, rgba(248, 250, 252, 0.96) 0%, rgba(248, 250, 252, 0.9) 100%);
+		background: var(--color-bg-elevated);
 		backdrop-filter: blur(16px);
 		border-bottom: 1px solid var(--color-border);
 	}
@@ -219,7 +218,7 @@
 				var(--space-2)
 				var(--space-3)
 				calc(0.7rem + env(safe-area-inset-bottom, 0px));
-			background: rgba(255, 255, 255, 0.96);
+			background: var(--color-bg-elevated);
 			backdrop-filter: blur(16px);
 			border-top: 1px solid var(--color-border);
 			box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.08);

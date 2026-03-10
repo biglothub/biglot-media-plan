@@ -58,17 +58,17 @@
   }
 
   .stats-card--primary {
-    background: linear-gradient(135deg, var(--color-blue-50), rgba(224, 231, 255, 0.6));
+    background: var(--color-bg-elevated);
     border-color: var(--color-primary-border);
   }
 
   .stats-card--success {
-    background: linear-gradient(135deg, var(--color-green-50), rgba(220, 252, 231, 0.5));
+    background: var(--color-bg-elevated);
     border-color: rgba(22, 163, 74, 0.2);
   }
 
   .stats-card--warning {
-    background: linear-gradient(135deg, var(--color-yellow-50), rgba(254, 249, 195, 0.5));
+    background: var(--color-bg-elevated);
     border-color: rgba(202, 138, 4, 0.2);
   }
 

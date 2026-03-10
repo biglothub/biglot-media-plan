@@ -599,7 +599,7 @@
 		padding: 1rem;
 		border-radius: 1rem;
 		border: 1px solid var(--color-border);
-		background: rgba(255, 255, 255, 0.86);
+		background: var(--color-bg-elevated);
 	}
 
 	.list-head {
@@ -668,7 +668,7 @@
 		position: sticky;
 		top: 0;
 		z-index: 1;
-		background: linear-gradient(180deg, #ffffff 0%, rgba(255, 255, 255, 0.92) 100%);
+		background: var(--color-bg-elevated);
 		padding: 0.2rem 0;
 		font-size: 0.78rem;
 		font-weight: 700;
@@ -852,7 +852,7 @@
 		display: grid;
 		align-content: start;
 		gap: 0.45rem;
-		background: rgba(255, 255, 255, 0.88);
+		background: var(--color-bg-elevated);
 		min-width: 0;
 		overflow-y: auto;
 	}

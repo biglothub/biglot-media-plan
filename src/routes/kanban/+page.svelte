@@ -87,12 +87,12 @@
 
 	// ── Derived ──────────────────────────────────────────────────────────────
 	const STAGE_META: Record<ProductionStage, { color: string; bg: string; headerBg: string }> = {
-		planned:   { color: '#475569', bg: '#f1f5f9', headerBg: '#e2e8f0' },
-		scripting: { color: '#6d28d9', bg: '#f5f3ff', headerBg: '#ede9fe' },
-		shooting:  { color: '#b45309', bg: '#fffbeb', headerBg: '#fef3c7' },
-		editing:   { color: '#1d4ed8', bg: '#eff6ff', headerBg: '#dbeafe' },
-		review:    { color: '#c2410c', bg: '#fff7ed', headerBg: '#fed7aa' },
-		published: { color: '#166534', bg: '#f0fdf4', headerBg: '#dcfce7' }
+		planned:   { color: '#475569', bg: '#ffffff', headerBg: '#ffffff' },
+		scripting: { color: '#6d28d9', bg: '#ffffff', headerBg: '#ffffff' },
+		shooting:  { color: '#b45309', bg: '#ffffff', headerBg: '#ffffff' },
+		editing:   { color: '#1d4ed8', bg: '#ffffff', headerBg: '#ffffff' },
+		review:    { color: '#c2410c', bg: '#ffffff', headerBg: '#ffffff' },
+		published: { color: '#166534', bg: '#ffffff', headerBg: '#ffffff' }
 	};
 
 	const approvalStatusLabel: Record<ApprovalStatus, string> = {
@@ -687,6 +687,7 @@
 		display: flex; justify-content: space-between; align-items: center;
 		padding: 0.7rem 0.9rem; background: var(--col-header-bg);
 		border-radius: 0.85rem 0.85rem 0 0; gap: 0.5rem;
+		border-bottom: 1px solid var(--color-border);
 	}
 	.col-title { font-weight: 700; font-size: 0.88rem; color: var(--col-color); font-family: var(--font-heading); }
 	.col-count {

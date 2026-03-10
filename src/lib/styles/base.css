@@ -18,9 +18,7 @@ body {
   font-size: var(--text-base);
   line-height: var(--leading-normal);
   color: var(--color-text);
-  background:
-    radial-gradient(circle at top left, rgba(59, 130, 246, 0.14), transparent 28%),
-    linear-gradient(180deg, var(--color-slate-50) 0%, var(--color-indigo-50) 100%);
+  background: var(--color-bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

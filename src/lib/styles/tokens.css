@@ -73,9 +73,9 @@
   --color-tiktok:    #010101;
 
   /* ── Semantic Aliases ── */
-  --color-bg:           var(--color-slate-50);
+  --color-bg:           #ffffff;
   --color-bg-elevated:  #ffffff;
-  --color-bg-subtle:    var(--color-slate-100);
+  --color-bg-subtle:    #ffffff;
   --color-border:       rgba(15, 23, 42, 0.08);
   --color-border-strong: rgba(15, 23, 42, 0.14);
   --color-text:         var(--color-slate-900);

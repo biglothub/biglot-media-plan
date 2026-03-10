@@ -1207,7 +1207,7 @@
 	.panel {
 		padding: 1.25rem;
 		border-radius: 1rem;
-		background: rgba(255, 255, 255, 0.85);
+		background: var(--color-bg-elevated);
 		border: 1px solid var(--color-border);
 	}
 
@@ -1227,7 +1227,7 @@
 		border: 1px solid var(--color-border);
 		border-radius: 0.8rem;
 		padding: 0.35rem 0.65rem;
-		background: rgba(255, 255, 255, 0.72);
+		background: var(--color-bg-elevated);
 	}
 
 	.manual-dropdown summary {
@@ -1374,7 +1374,7 @@
 	.metric-item {
 		padding: 0.65rem;
 		border-radius: 0.75rem;
-		background: rgba(15, 23, 42, 0.04);
+		background: var(--color-bg-elevated);
 		border: 1px solid var(--color-border);
 	}
 
@@ -1419,7 +1419,7 @@
 	.category-group {
 		border: 1px solid var(--color-border);
 		border-radius: 0.9rem;
-		background: rgba(248, 250, 252, 0.72);
+		background: var(--color-bg-elevated);
 		overflow: hidden;
 	}
 
@@ -1765,7 +1765,7 @@
 	}
 
 	.dash-group {
-		background: rgba(255, 255, 255, 0.85);
+		background: var(--color-bg-elevated);
 		border: 1px solid var(--color-border);
 		border-radius: 0.9rem;
 		padding: 0.75rem 0.9rem;

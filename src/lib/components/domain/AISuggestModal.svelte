@@ -390,7 +390,7 @@
 		padding: 0.9rem 1rem;
 		display: grid;
 		gap: 0.4rem;
-		background: #fafafa;
+		background: var(--color-bg-elevated);
 	}
 
 	.chip-row { display: flex; gap: 0.35rem; flex-wrap: wrap; }

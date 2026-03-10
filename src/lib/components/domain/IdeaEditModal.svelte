@@ -643,7 +643,7 @@
 		position: absolute;
 		top: 0.5rem;
 		right: 0.5rem;
-		background: rgba(255, 255, 255, 0.9);
+		background: var(--color-bg-elevated);
 		border: 1px solid #e2e8f0;
 		border-radius: 0.4rem;
 		width: 1.75rem;
@@ -706,7 +706,7 @@
 		border: 1px solid #e2e8f0;
 		border-radius: 0.6rem;
 		padding: 1rem 1.1rem;
-		background: #fafafa;
+		background: var(--color-bg-elevated);
 		cursor: text;
 		font-size: 0.875rem;
 		line-height: 1.7;
