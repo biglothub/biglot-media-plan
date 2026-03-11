@@ -23,7 +23,6 @@
 		getInstagramEmbedUrl,
 		getTikTokEmbedUrl,
 		getYouTubeEmbedUrl,
-		numberFormatter,
 		platformLabel,
 		platformOrder,
 		PRODUCTION_STAGES,
@@ -57,16 +56,14 @@
 
 	const dashboardStats = $derived.by(() => {
 		const platformCount: Record<string, number> = {};
-		let totalViews = 0;
 		for (const idea of ideas) {
 			platformCount[idea.platform] = (platformCount[idea.platform] ?? 0) + 1;
-			if (idea.view_count) totalViews += idea.view_count;
 		}
 		const stageCount: Record<string, number> = { planned: 0, scripting: 0, shooting: 0, editing: 0, published: 0 };
 		for (const { status } of scheduledCalendarMap.values()) {
 			if (status in stageCount) stageCount[status]++;
 		}
-		return { platformCount, stageCount, totalIdeas: ideas.length, totalViews };
+		return { platformCount, stageCount, totalIdeas: ideas.length };
 	});
 	let selectedContentType = $state<BacklogContentType>("video");
 	let showPublished = $state(false);
@@ -679,11 +676,6 @@
 				value={scheduledCalendarMap.size}
 				sub="{Math.round((scheduledCalendarMap.size / Math.max(ideas.length, 1)) * 100)}% of total"
 				variant="success"
-			/>
-			<StatsCard
-				icon="👁"
-				label="Total Views"
-				value={numberFormatter.format(dashboardStats.totalViews)}
 			/>
 		</div>
 		<div class="dash-row">
