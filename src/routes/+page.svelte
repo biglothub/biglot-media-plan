@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from "svelte";
-	import { Button, Spinner, PageHeader, Badge, toast, StatsCard, IdeaCard } from '$lib';
+	import { Button, Spinner, Badge, toast, StatsCard, IdeaCard } from '$lib';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { hasSupabaseConfig, supabase } from "$lib/supabase";
@@ -56,15 +56,49 @@
 
 	const dashboardStats = $derived.by(() => {
 		const platformCount: Record<string, number> = {};
+		let uncategorizedIdeas = 0;
+		let pinnedIdeas = 0;
 		for (const idea of ideas) {
 			platformCount[idea.platform] = (platformCount[idea.platform] ?? 0) + 1;
+			if (!idea.content_category) uncategorizedIdeas += 1;
+			if (idea.content_category === 'pin') pinnedIdeas += 1;
 		}
-		const stageCount: Record<string, number> = { planned: 0, scripting: 0, shooting: 0, editing: 0, published: 0 };
+		const stageCount: Record<string, number> = { planned: 0, scripting: 0, shooting: 0, editing: 0, review: 0, published: 0 };
 		for (const { status } of scheduledCalendarMap.values()) {
 			if (status in stageCount) stageCount[status]++;
 		}
-		return { platformCount, stageCount, totalIdeas: ideas.length };
+		const scheduledIdeas = scheduledBacklogIds.size;
+		const publishedIdeas = publishedBacklogIds.size;
+		const activeIdeas = Math.max(ideas.length - publishedIdeas, 0);
+		return {
+			platformCount,
+			stageCount,
+			totalIdeas: ideas.length,
+			activeIdeas,
+			publishedIdeas,
+			scheduledIdeas,
+			uncategorizedIdeas,
+			pinnedIdeas,
+		};
 	});
+	const scheduledPercent = $derived(
+		dashboardStats.totalIdeas > 0
+			? Math.round((dashboardStats.scheduledIdeas / dashboardStats.totalIdeas) * 100)
+			: 0,
+	);
+	const platformBreakdown = $derived(
+		platformOrder
+			.map((platform) => ({
+				platform,
+				count: dashboardStats.platformCount[platform] ?? 0,
+			}))
+			.filter((item) => item.count > 0),
+	);
+	const maxPlatformCount = $derived(
+		platformBreakdown.length > 0
+			? Math.max(...platformBreakdown.map((item) => item.count))
+			: 1,
+	);
 	let selectedContentType = $state<BacklogContentType>("video");
 	let showPublished = $state(false);
 
@@ -86,15 +120,11 @@
 	let selectedCategory = $state<BacklogContentCategory | "">("");
 
 	let manualExpanded = $state(false);
-	let manualUrl = $state("");
 	let manualPlatform = $state<SupportedPlatform>("youtube");
 	let manualContentType = $state<BacklogContentType>("video");
 	let manualCategory = $state<BacklogContentCategory | "">("");
 	let manualTitle = $state("");
 	let manualDescription = $state("");
-	let manualAuthorName = $state("");
-	let manualThumbnailUrl = $state("");
-	let manualPublishedAt = $state("");
 	let manualNotes = $state("");
 	let metrics = $state({
 		views: null as number | null,
@@ -173,6 +203,15 @@
 		window.scrollTo({ top: 0, behavior: "smooth" });
 	}
 
+	function focusAnalyzeInput() {
+		scrollToTop();
+		requestAnimationFrame(() => {
+			const input = document.getElementById('content-link') as HTMLInputElement | null;
+			input?.focus();
+			input?.select();
+		});
+	}
+
 	function clearState() {
 		draft = null;
 		notes = "";
@@ -189,15 +228,11 @@
 	}
 
 	function clearManualState() {
-		manualUrl = "";
 		manualPlatform = "youtube";
 		manualContentType = "video";
 		manualCategory = "";
 		manualTitle = "";
 		manualDescription = "";
-		manualAuthorName = "";
-		manualThumbnailUrl = "";
-		manualPublishedAt = "";
 		manualNotes = "";
 		manualMetrics = {
 			views: null,
@@ -211,15 +246,6 @@
 	function normalizeOptionalText(value: string): string | null {
 		const normalized = value.trim();
 		return normalized ? normalized : null;
-	}
-
-	function normalizePublishedAt(value: string): string | null {
-		const normalized = value.trim();
-		if (!normalized) return null;
-
-		const parsed = new Date(normalized);
-		if (Number.isNaN(parsed.getTime())) return null;
-		return parsed.toISOString();
 	}
 
 	function buildEditUrl(backlogId: string | null): URL {
@@ -397,45 +423,17 @@
 			return;
 		}
 
-		const rawUrl = manualUrl.trim();
-		const normalizedUrl = rawUrl || null;
-
-		if (normalizedUrl) {
-			try {
-				const parsed = new URL(normalizedUrl);
-				if (!["http:", "https:"].includes(parsed.protocol)) {
-					toast.error("ลิงก์ต้องเป็น http/https เท่านั้น");
-					return;
-				}
-			} catch {
-				toast.error("ลิงก์ไม่ถูกต้อง");
-				return;
-			}
-		}
-
 		saving = true;
 
-		if (normalizedUrl) {
-			const existingIdea = ideas.find(
-				(i) => i.url && i.url === normalizedUrl,
-			);
-			if (existingIdea) {
-				toast.error(`ไอเดียลิงก์นี้มีอยู่ในระบบแล้ว (${backlogCode(existingIdea)})`);
-				scrollToTop();
-				saving = false;
-				return;
-			}
-		}
-
 		const payload = {
-			url: normalizedUrl,
+			url: null,
 			platform: manualPlatform,
 			content_type: manualContentType,
 			title: normalizeOptionalText(manualTitle),
 			description: normalizeOptionalText(manualDescription),
-			author_name: normalizeOptionalText(manualAuthorName),
-			thumbnail_url: normalizeOptionalText(manualThumbnailUrl),
-			published_at: normalizePublishedAt(manualPublishedAt),
+			author_name: null,
+			thumbnail_url: null,
+			published_at: null,
 			view_count: manualMetrics.views,
 			like_count: manualMetrics.likes,
 			comment_count: manualMetrics.comments,
@@ -648,11 +646,113 @@
 </script>
 
 <main class="page">
-	<PageHeader
-		eyebrow="BigLot Media Plan"
-		title="Idea Backlog"
-		subtitle="วางลิงก์แล้ว Analyze อัตโนมัติ หรือกรอกเองแบบ Manual ก็ได้ รองรับ YouTube / Facebook / Instagram / TikTok และเก็บได้ทั้ง Video, Post, Image"
-	/>
+	<section class="hero-shell">
+		<div class="hero-main">
+			<div class="hero-copy">
+				<p class="hero-eyebrow">BigLot Media Plan</p>
+				<h1 class="hero-title">Idea Backlog</h1>
+				<p class="hero-subtitle">
+					วางลิงก์เพื่อดึง metadata อัตโนมัติ หรือสร้างไอเดียเองแบบ manual แล้วค่อยแตกต่อเป็น production ได้จากหน้าเดียว
+				</p>
+			</div>
+
+			<div class="hero-actions">
+				<Button variant="primary" size="lg" onclick={focusAnalyzeInput}>Analyze Link</Button>
+				<Button variant="ai" size="lg" onclick={() => { showSuggestModeModal = true; }}>
+					✦ ช่วยคิด idea
+				</Button>
+				{#if ideas.length > 0}
+					<Button variant="secondary" size="lg" onclick={exportBacklogCSV}>Export CSV</Button>
+				{/if}
+			</div>
+
+			<div class="hero-band">
+				<div class="hero-band-card">
+					<span class="hero-band-label">รองรับแพลตฟอร์ม</span>
+					<div class="hero-platforms">
+						{#each platformOrder as platform}
+							<Badge variant="platform" value={platform} />
+						{/each}
+					</div>
+				</div>
+				<div class="hero-band-card">
+					<span class="hero-band-label">Focus ตอนนี้</span>
+					<p class="hero-band-value">
+						{#if dashboardStats.uncategorizedIdeas > 0}
+							{dashboardStats.uncategorizedIdeas} ideas ยังไม่จัดหมวด
+						{:else}
+							Backlog จัดหมวดครบแล้ว
+						{/if}
+					</p>
+					<p class="hero-band-copy">คลิกขวาที่ card เพื่อ schedule ลง shoot calendar ได้ทันที</p>
+				</div>
+			</div>
+
+			<div class="hero-stats">
+				<StatsCard
+					icon="💡"
+					label="Ideas ในคลัง"
+					value={dashboardStats.totalIdeas}
+					sub="{dashboardStats.activeIdeas} active"
+					variant="primary"
+				/>
+				<StatsCard
+					icon="📅"
+					label="Scheduled"
+					value={dashboardStats.scheduledIdeas}
+					sub="{scheduledPercent}% of total"
+					variant="success"
+				/>
+				<StatsCard
+					icon="🪄"
+					label="Needs Category"
+					value={dashboardStats.uncategorizedIdeas}
+					sub={dashboardStats.pinnedIdeas > 0 ? `${dashboardStats.pinnedIdeas} pinned` : 'พร้อมจัดระบบ'}
+					variant="warning"
+				/>
+			</div>
+		</div>
+
+		<aside class="hero-side">
+			<div class="dash-group">
+				<p class="dash-group-label">Platform Mix</p>
+				{#if platformBreakdown.length === 0}
+					<p class="dash-empty">เริ่มจากวางลิงก์หรือสร้าง idea ใหม่เพื่อให้เห็นภาพรวมแพลตฟอร์ม</p>
+				{:else}
+					<div class="mix-list">
+						{#each platformBreakdown as item}
+							<div class="mix-row">
+								<div class="mix-label">
+									<Badge variant="platform" value={item.platform} />
+									<strong>{item.count}</strong>
+								</div>
+								<div class="mix-bar">
+									<span style={`width:${(item.count / maxPlatformCount) * 100}%`}></span>
+								</div>
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
+			<div class="dash-group">
+				<p class="dash-group-label">Production Stage</p>
+				{#if dashboardStats.scheduledIdeas === 0}
+					<p class="dash-empty">ยังไม่มีรายการที่ถูก schedule จาก backlog</p>
+				{:else}
+					<div class="stage-pills">
+						{#each PRODUCTION_STAGES as stage}
+							{#if (dashboardStats.stageCount[stage] ?? 0) > 0}
+								<div class="stage-pill">
+									<Badge variant="stage" value={stage} />
+									<strong>{dashboardStats.stageCount[stage]}</strong>
+								</div>
+							{/if}
+						{/each}
+					</div>
+				{/if}
+			</div>
+		</aside>
+	</section>
 
 	{#if !hasSupabaseConfig}
 		<p class="alert">
@@ -661,208 +761,231 @@
 		</p>
 	{/if}
 
-	{#if ideas.length > 0}
-	<section class="dashboard">
-		<div class="dash-cards">
-			<StatsCard
-				icon="💡"
-				label="Ideas ในคลัง"
-				value={dashboardStats.totalIdeas}
-				variant="primary"
-			/>
-			<StatsCard
-				icon="📅"
-				label="Scheduled"
-				value={scheduledCalendarMap.size}
-				sub="{Math.round((scheduledCalendarMap.size / Math.max(ideas.length, 1)) * 100)}% of total"
-				variant="success"
-			/>
-		</div>
-		<div class="dash-row">
-			<div class="dash-group">
-				<p class="dash-group-label">Platform</p>
-				<div class="dash-pills">
-					{#each platformOrder as p}
-						{#if (dashboardStats.platformCount[p] ?? 0) > 0}
-							<Badge variant="platform" value={p} />
-							<span class="dash-pill-count">{dashboardStats.platformCount[p]}</span>
-						{/if}
-					{/each}
-				</div>
-			</div>
-			<div class="dash-group">
-				<p class="dash-group-label">Production Stage</p>
-				<div class="dash-pills">
-					{#each PRODUCTION_STAGES as stage}
-						{#if (dashboardStats.stageCount[stage] ?? 0) > 0}
-							<Badge variant="stage" value={stage} />
-							<span class="dash-pill-count">{dashboardStats.stageCount[stage]}</span>
-						{/if}
-					{/each}
-				</div>
-			</div>
-		</div>
-	</section>
-	{/if}
-
-	<section class="panel">
-		<div class="row">
-			<label for="content-link">Content Link</label>
-			<input
-				id="content-link"
-				bind:value={linkInput}
-				placeholder="https://www.instagram.com/p/... หรือ https://www.youtube.com/watch?v=..."
-			/>
-		</div>
-		<div class="panel-actions">
-			<Button variant="primary" onclick={analyzeLink} loading={enriching}>
-				{enriching ? "Analyzing..." : "Analyze Link"}
-			</Button>
-			<Button variant="ai" onclick={() => { showSuggestModeModal = true; }}>
-				✦ ช่วยคิด idea
-			</Button>
-		</div>
-	</section>
-
-
-
-	{#if draft}
-		<section class="panel">
-			<div class="preview">
-				{#if draftTikTokEmbedUrl}
-					<iframe
-						class="preview-media tiktok-frame"
-						src={draftTikTokEmbedUrl}
-						title="TikTok Preview"
-						loading="lazy"
-						allow="encrypted-media; picture-in-picture"
-						allowfullscreen
-					></iframe>
-				{:else if draftYouTubeEmbedUrl}
-					<iframe
-						class="preview-media youtube-frame"
-						src={draftYouTubeEmbedUrl}
-						title="YouTube Preview"
-						loading="lazy"
-						allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-						allowfullscreen
-					></iframe>
-				{:else if draft.thumbnailUrl}
-					<img
-						class="preview-media"
-						src={draft.thumbnailUrl}
-						alt={draft.title ?? "thumbnail"}
-					/>
-				{:else if draftInstagramEmbedUrl}
-					<iframe
-						class="preview-media instagram-frame"
-						src={draftInstagramEmbedUrl}
-						title="Instagram Preview"
-						loading="lazy"
-						allow="encrypted-media; picture-in-picture"
-						allowfullscreen
-					></iframe>
-				{/if}
+	<section class="workspace-grid">
+		<section class="panel panel--feature">
+			<div class="panel-head panel-head--feature">
 				<div>
-					<div class="chip-row">
-						<span class="platform"
-							>{draft.platform.toUpperCase()}</span
-						>
-						<span class="content-type"
-							>{contentTypeLabel[selectedContentType]}</span
-						>
+					<p class="panel-eyebrow">Auto Intake</p>
+					<h2>วางลิงก์ แล้วให้ระบบช่วยดึง metadata</h2>
+					<p class="panel-subtitle">
+						เหมาะกับการเก็บ reference จากคู่แข่งหรือคอนเทนต์ที่ทีมอยากแตกต่อเป็นไอเดียใหม่
+					</p>
+				</div>
+				<span class="feature-chip">Fast capture</span>
+			</div>
+
+			<div class="analyzer-grid">
+				<div class="analyzer-form">
+					<div class="row no-margin">
+						<label for="content-link">Content Link</label>
+						<input
+							id="content-link"
+							bind:value={linkInput}
+							placeholder="https://www.instagram.com/p/... หรือ https://www.youtube.com/watch?v=..."
+						/>
 					</div>
-					<h2>{draft.title ?? "Untitled content"}</h2>
-					<p class="meta">
-						{draft.authorName ?? "Unknown creator"}
-						{#if draft.publishedAt}
-							• {new Date(draft.publishedAt).toLocaleDateString()}
+					<div class="panel-actions">
+						<Button variant="primary" onclick={analyzeLink} loading={enriching}>
+							{enriching ? "Analyzing..." : "Analyze Link"}
+						</Button>
+						{#if linkInput || draft}
+							<Button variant="ghost" onclick={() => { linkInput = ""; clearState(); }}>
+								Clear
+							</Button>
 						{/if}
+					</div>
+				</div>
+
+				<div class="analyzer-hints">
+					<div class="tip-card">
+						<span class="tip-number">01</span>
+						<strong>Paste reference</strong>
+						<p>วางลิงก์จาก YouTube, Facebook, Instagram หรือ TikTok แล้วระบบจะ enrich ให้ทันที</p>
+					</div>
+					<div class="tip-card">
+						<span class="tip-number">02</span>
+						<strong>Review draft</strong>
+						<p>เช็ก type, category และ note ให้พร้อมก่อนโยนเข้า backlog เพื่อให้ทีมเห็นภาพเดียวกัน</p>
+					</div>
+					<div class="tip-card">
+						<span class="tip-number">03</span>
+						<strong>Schedule faster</strong>
+						<p>หลังบันทึกแล้ว คลิกขวาที่ card เพื่อ pin หรือ schedule ลงปฏิทินได้จากหน้าเดียว</p>
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<section class="panel panel--manual">
+			<div class="panel-head">
+				<div>
+					<p class="panel-eyebrow">Manual Builder</p>
+					<h2>สร้างไอเดียเองแบบย่อ</h2>
+					<p class="panel-subtitle">
+						ใช้เมื่อยังไม่มีลิงก์อ้างอิง แต่ต้องการโยนหัวข้อหรือ concept ใหม่เข้า backlog ให้ทีมเห็นก่อน
 					</p>
 				</div>
 			</div>
 
+			<details class="manual-dropdown" bind:open={manualExpanded}>
+				<summary>
+					<div class="manual-summary">
+						<span>Create manually</span>
+						<small>กรอกเฉพาะข้อมูลที่มี แล้วค่อยกลับมาเติมภายหลังได้</small>
+					</div>
+					<span class="manual-toggle">{manualExpanded ? '−' : '+'}</span>
+				</summary>
 
-			<div class="row">
-				<label for="content-type">Content Type</label>
-				<select id="content-type" bind:value={selectedContentType}>
-					{#each CONTENT_TYPE_OPTIONS as option}
-						<option value={option}
-							>{contentTypeLabel[option]}</option
-						>
-					{/each}
-				</select>
-			</div>
+				<div class="manual-body">
+					<div class="row-inline">
+						<div class="row">
+							<label for="manual-platform">Platform</label>
+							<select
+								id="manual-platform"
+								bind:value={manualPlatform}
+							>
+								{#each platformOptions as option}
+									<option value={option}
+										>{platformLabel[option]}</option
+									>
+								{/each}
+							</select>
+						</div>
+						<div class="row">
+							<label for="manual-content-type">Content Type</label>
+							<select
+								id="manual-content-type"
+								bind:value={manualContentType}
+							>
+								{#each CONTENT_TYPE_OPTIONS as option}
+									<option value={option}
+										>{contentTypeLabel[option]}</option
+									>
+								{/each}
+							</select>
+						</div>
+					</div>
 
-			<div class="row">
-				<div class="category-label-row">
-					<label for="content-category">Category</label>
-					{#if suggestedCategory}
-						<span class="category-suggest-label">
-							AI แนะนำ: {contentCategoryLabel[suggestedCategory]}
-						</span>
-					{/if}
-				</div>
-				<select id="content-category" bind:value={selectedCategory}>
-					{#each CONTENT_CATEGORY_OPTIONS as option}
-						<option value={option.value}>{option.label}</option>
-					{/each}
-				</select>
-			</div>
-
-			<div class="row">
-				<label for="notes">Idea Notes</label>
-				<textarea
-					id="notes"
-					bind:value={notes}
-					rows={4}
-					placeholder="ไอเดียที่ได้จากคอนเทนต์นี้ เช่น hook, visual style, CTA..."
-				></textarea>
-			</div>
-
-			<Button variant="primary" onclick={saveIdea} loading={saving} disabled={!hasSupabaseConfig}>
-				{saving ? "Saving..." : "Save To Backlog"}
-			</Button>
-		</section>
-	{/if}
-
-	<section class="panel">
-		<details class="manual-dropdown" bind:open={manualExpanded}>
-			<summary>
-				<span>Create Manually</span>
-				<small>กรอกเองแบบย่อ</small>
-			</summary>
-
-			<div class="manual-body">
-				<div class="row">
-					<label for="manual-url">Content Link</label>
-					<input
-						id="manual-url"
-						bind:value={manualUrl}
-						placeholder="(ไม่บังคับ) https://www.facebook.com/... หรือ https://www.instagram.com/p/..."
-					/>
-				</div>
-
-				<div class="row-inline">
 					<div class="row">
-						<label for="manual-platform">Platform</label>
-						<select
-							id="manual-platform"
-							bind:value={manualPlatform}
-						>
-							{#each platformOptions as option}
-								<option value={option}
-									>{platformLabel[option]}</option
-								>
+						<label for="manual-category">Category</label>
+						<select id="manual-category" bind:value={manualCategory}>
+							{#each CONTENT_CATEGORY_OPTIONS as option}
+								<option value={option.value}>{option.label}</option>
 							{/each}
 						</select>
 					</div>
+
 					<div class="row">
-						<label for="manual-content-type">Content Type</label>
-						<select
-							id="manual-content-type"
-							bind:value={manualContentType}
-						>
+						<label for="manual-title">Title</label>
+						<input
+							id="manual-title"
+							bind:value={manualTitle}
+							placeholder="ชื่อไอเดีย/ชื่อโพสต์"
+						/>
+					</div>
+
+					<div class="row">
+						<label for="manual-description">Description</label>
+						<textarea
+							id="manual-description"
+							bind:value={manualDescription}
+							rows={3}
+							placeholder="คำอธิบายเพิ่มเติม (ถ้ามี)"
+						></textarea>
+					</div>
+
+					<div class="row">
+						<label for="manual-notes">Idea Notes</label>
+						<textarea
+							id="manual-notes"
+							bind:value={manualNotes}
+							rows={4}
+							placeholder="เขียนไอเดียที่ทีมอยากผลิตเองได้เลย"
+						></textarea>
+					</div>
+
+					<Button variant="primary" onclick={saveManualIdea} loading={saving} disabled={!hasSupabaseConfig}>
+						{saving ? "Saving..." : "Save Manual Idea"}
+					</Button>
+				</div>
+			</details>
+		</section>
+	</section>
+
+	{#if draft}
+		<section class="panel panel--draft">
+			<div class="panel-head">
+				<div>
+					<p class="panel-eyebrow">Draft Preview</p>
+					<h2>พร้อมบันทึกเข้า backlog</h2>
+					<p class="panel-subtitle">ตรวจ type, category และ idea note ก่อนบันทึกเข้า workflow หลัก</p>
+				</div>
+				{#if suggestedCategory}
+					<Badge variant="warning" label={`AI แนะนำ: ${contentCategoryLabel[suggestedCategory]}`} />
+				{/if}
+			</div>
+
+			<div class="draft-grid">
+				<div class="preview-card">
+					<div class="preview">
+						{#if draftTikTokEmbedUrl}
+							<iframe
+								class="preview-media tiktok-frame"
+								src={draftTikTokEmbedUrl}
+								title="TikTok Preview"
+								loading="lazy"
+								allow="encrypted-media; picture-in-picture"
+								allowfullscreen
+							></iframe>
+						{:else if draftYouTubeEmbedUrl}
+							<iframe
+								class="preview-media youtube-frame"
+								src={draftYouTubeEmbedUrl}
+								title="YouTube Preview"
+								loading="lazy"
+								allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+								allowfullscreen
+							></iframe>
+						{:else if draft.thumbnailUrl}
+							<img
+								class="preview-media"
+								src={draft.thumbnailUrl}
+								alt={draft.title ?? "thumbnail"}
+							/>
+						{:else if draftInstagramEmbedUrl}
+							<iframe
+								class="preview-media instagram-frame"
+								src={draftInstagramEmbedUrl}
+								title="Instagram Preview"
+								loading="lazy"
+								allow="encrypted-media; picture-in-picture"
+								allowfullscreen
+							></iframe>
+						{/if}
+						<div>
+							<div class="chip-row">
+								<span class="platform"
+									>{draft.platform.toUpperCase()}</span
+								>
+								<span class="content-type"
+									>{contentTypeLabel[selectedContentType]}</span
+								>
+							</div>
+							<h2>{draft.title ?? "Untitled content"}</h2>
+							<p class="meta">
+								{draft.authorName ?? "Unknown creator"}
+								{#if draft.publishedAt}
+									• {new Date(draft.publishedAt).toLocaleDateString()}
+								{/if}
+							</p>
+						</div>
+					</div>
+				</div>
+
+				<div class="draft-fields">
+					<div class="row">
+						<label for="content-type">Content Type</label>
+						<select id="content-type" bind:value={selectedContentType}>
 							{#each CONTENT_TYPE_OPTIONS as option}
 								<option value={option}
 									>{contentTypeLabel[option]}</option
@@ -870,86 +993,57 @@
 							{/each}
 						</select>
 					</div>
-				</div>
 
-				<div class="row">
-					<label for="manual-category">Category</label>
-					<select id="manual-category" bind:value={manualCategory}>
-						{#each CONTENT_CATEGORY_OPTIONS as option}
-							<option value={option.value}>{option.label}</option>
-						{/each}
-					</select>
-				</div>
-
-				<div class="row">
-					<label for="manual-title">Title</label>
-					<input
-						id="manual-title"
-						bind:value={manualTitle}
-						placeholder="ชื่อไอเดีย/ชื่อโพสต์"
-					/>
-				</div>
-
-				<div class="row">
-					<label for="manual-description">Description</label>
-					<textarea
-						id="manual-description"
-						bind:value={manualDescription}
-						rows={3}
-						placeholder="คำอธิบายเพิ่มเติม (ถ้ามี)"
-					></textarea>
-				</div>
-
-				<div class="row-inline">
 					<div class="row">
-						<label for="manual-author">Creator / Account</label>
-						<input
-							id="manual-author"
-							bind:value={manualAuthorName}
-							placeholder="เช่น @biglot"
-						/>
+						<div class="category-label-row">
+							<label for="content-category">Category</label>
+							{#if suggestedCategory}
+								<span class="category-suggest-label">
+									AI แนะนำ: {contentCategoryLabel[suggestedCategory]}
+								</span>
+							{/if}
+						</div>
+						<select id="content-category" bind:value={selectedCategory}>
+							{#each CONTENT_CATEGORY_OPTIONS as option}
+								<option value={option.value}>{option.label}</option>
+							{/each}
+						</select>
 					</div>
+
 					<div class="row">
-						<label for="manual-published-at">Published At</label>
-						<input
-							id="manual-published-at"
-							type="datetime-local"
-							bind:value={manualPublishedAt}
-						/>
+						<label for="notes">Idea Notes</label>
+						<textarea
+							id="notes"
+							bind:value={notes}
+							rows={5}
+							placeholder="ไอเดียที่ได้จากคอนเทนต์นี้ เช่น hook, visual style, CTA..."
+						></textarea>
+					</div>
+
+					<div class="draft-actions">
+						<Button variant="primary" onclick={saveIdea} loading={saving} disabled={!hasSupabaseConfig}>
+							{saving ? "Saving..." : "Save To Backlog"}
+						</Button>
+						<Button variant="ghost" onclick={clearState}>ล้าง draft</Button>
 					</div>
 				</div>
-
-				<div class="row">
-					<label for="manual-thumbnail">Thumbnail URL</label>
-					<input
-						id="manual-thumbnail"
-						bind:value={manualThumbnailUrl}
-						placeholder="https://..."
-					/>
-				</div>
-
-
-				<div class="row">
-					<label for="manual-notes">Idea Notes</label>
-					<textarea
-						id="manual-notes"
-						bind:value={manualNotes}
-						rows={4}
-						placeholder="เขียนไอเดียที่ทีมอยากผลิตเองได้เลย"
-					></textarea>
-				</div>
-
-				<Button variant="primary" onclick={saveManualIdea} loading={saving} disabled={!hasSupabaseConfig}>
-					{saving ? "Saving..." : "Save Manual Idea"}
-				</Button>
 			</div>
-		</details>
-	</section>
+		</section>
+	{/if}
 
-	<section class="panel">
-		<div class="list-head">
-			<h2>Backlog ({ideas.length - publishedBacklogIds.size} active{publishedBacklogIds.size > 0 ? ` · ${publishedBacklogIds.size} published` : ''})</h2>
-			<div style="display:flex;gap:0.5rem;align-items:center">
+	<section class="panel panel--backlog">
+		<div class="backlog-head">
+			<div>
+				<p class="panel-eyebrow">Library</p>
+				<h2>Backlog</h2>
+				<p class="backlog-caption">
+					{dashboardStats.activeIdeas} active ideas
+					{#if dashboardStats.publishedIdeas > 0}
+						· {dashboardStats.publishedIdeas} published
+					{/if}
+				</p>
+			</div>
+			<div class="backlog-toolbar">
 				{#if loadingIdeas}<Spinner size="sm" />{/if}
 				{#if publishedBacklogIds.size > 0}
 					<button
@@ -957,11 +1051,25 @@
 						onclick={() => (showPublished = !showPublished)}
 					>{showPublished ? 'ซ่อน Published' : 'แสดง Published'}</button>
 				{/if}
-				{#if ideas.length > 0}
-					<button class="export-btn" onclick={exportBacklogCSV}>Export CSV</button>
-				{/if}
 			</div>
 		</div>
+
+		{#if ideas.length > 0}
+			<div class="backlog-meta-strip">
+				<div class="mini-stat">
+					<span>Active</span>
+					<strong>{dashboardStats.activeIdeas}</strong>
+				</div>
+				<div class="mini-stat">
+					<span>Pinned</span>
+					<strong>{dashboardStats.pinnedIdeas}</strong>
+				</div>
+				<div class="mini-stat">
+					<span>Groups</span>
+					<strong>{groupedIdeas.length}</strong>
+				</div>
+			</div>
+		{/if}
 
 		{#if ideas.length === 0}
 			<p class="empty">ยังไม่มีรายการไอเดียในระบบ</p>
@@ -1047,7 +1155,7 @@
 <style>
 	.page {
 		display: grid;
-		gap: 1rem;
+		gap: 1.15rem;
 	}
 
 	h2,
@@ -1055,11 +1163,303 @@
 		font-family: var(--font-heading);
 	}
 
+	.hero-shell {
+		display: grid;
+		grid-template-columns: minmax(0, 1.6fr) minmax(300px, 0.95fr);
+		gap: 1rem;
+		align-items: stretch;
+	}
+
+	.hero-main {
+		position: relative;
+		overflow: hidden;
+		display: grid;
+		gap: 1.1rem;
+		padding: 1.35rem;
+		border-radius: 1.5rem;
+		border: 1px solid rgba(37, 99, 235, 0.14);
+		background:
+			radial-gradient(circle at top right, rgba(249, 115, 22, 0.18), transparent 28%),
+			radial-gradient(circle at 18% 18%, rgba(37, 99, 235, 0.16), transparent 24%),
+			linear-gradient(135deg, #ffffff 0%, #f8fbff 54%, #fff7ed 100%);
+		box-shadow: var(--shadow-sm);
+	}
+
+	.hero-main::before {
+		content: '';
+		position: absolute;
+		inset: auto -4rem -5rem auto;
+		width: 18rem;
+		height: 18rem;
+		border-radius: 999px;
+		background: radial-gradient(circle, rgba(37, 99, 235, 0.12), transparent 68%);
+		pointer-events: none;
+	}
+
+	.hero-main::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background-image:
+			linear-gradient(rgba(255, 255, 255, 0.45) 1px, transparent 1px),
+			linear-gradient(90deg, rgba(255, 255, 255, 0.45) 1px, transparent 1px);
+		background-size: 28px 28px;
+		mask-image: linear-gradient(135deg, rgba(0, 0, 0, 0.35), transparent 75%);
+		pointer-events: none;
+	}
+
+	.hero-main > * {
+		position: relative;
+		z-index: 1;
+	}
+
+	.hero-copy {
+		display: grid;
+		gap: 0.6rem;
+		max-width: 42rem;
+	}
+
+	.hero-eyebrow {
+		margin: 0;
+		font-size: 0.75rem;
+		font-weight: 700;
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
+		color: var(--color-blue-700);
+	}
+
+	.hero-title {
+		margin: 0;
+		font-family: var(--font-heading);
+		font-size: clamp(2.4rem, 6vw, 4.1rem);
+		line-height: 0.94;
+		letter-spacing: -0.04em;
+		color: var(--color-slate-900);
+	}
+
+	.hero-subtitle {
+		margin: 0;
+		max-width: 42rem;
+		font-size: 1rem;
+		line-height: 1.7;
+		color: var(--color-slate-600);
+	}
+
+	.hero-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.65rem;
+	}
+
+	.hero-band {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.75rem;
+	}
+
+	.hero-band-card {
+		display: grid;
+		gap: 0.5rem;
+		padding: 0.95rem 1rem;
+		border-radius: 1rem;
+		background: rgba(255, 255, 255, 0.78);
+		backdrop-filter: blur(10px);
+		border: 1px solid rgba(15, 23, 42, 0.07);
+	}
+
+	.hero-band-label {
+		font-size: 0.7rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--color-slate-500);
+	}
+
+	.hero-platforms {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+	}
+
+	.hero-band-value {
+		margin: 0;
+		font-family: var(--font-heading);
+		font-size: 1.2rem;
+		line-height: 1.2;
+		color: var(--color-slate-900);
+	}
+
+	.hero-band-copy {
+		margin: 0;
+		font-size: 0.82rem;
+		line-height: 1.55;
+		color: var(--color-slate-500);
+	}
+
+	.hero-stats {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0.75rem;
+	}
+
+	.hero-side {
+		display: grid;
+		gap: 0.85rem;
+	}
+
+	.dash-group {
+		display: grid;
+		gap: 0.75rem;
+		padding: 1rem;
+		border-radius: 1.15rem;
+		background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.98));
+		border: 1px solid var(--color-border);
+		box-shadow: var(--shadow-xs);
+	}
+
+	.dash-group-label {
+		margin: 0;
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		font-weight: 700;
+		color: var(--color-slate-400);
+	}
+
+	.dash-empty {
+		margin: 0;
+		font-size: 0.85rem;
+		line-height: 1.6;
+		color: var(--color-slate-500);
+	}
+
+	.mix-list {
+		display: grid;
+		gap: 0.7rem;
+	}
+
+	.mix-row {
+		display: grid;
+		gap: 0.4rem;
+	}
+
+	.mix-label {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.6rem;
+	}
+
+	.mix-label strong {
+		font-family: var(--font-heading);
+		font-size: 1rem;
+		color: var(--color-slate-900);
+	}
+
+	.mix-bar {
+		height: 0.42rem;
+		border-radius: 999px;
+		background: var(--color-slate-100);
+		overflow: hidden;
+	}
+
+	.mix-bar span {
+		display: block;
+		height: 100%;
+		border-radius: inherit;
+		background: linear-gradient(90deg, var(--color-blue-600), var(--color-orange-500));
+	}
+
+	.stage-pills {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.55rem;
+	}
+
+	.stage-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.28rem 0.34rem;
+		border-radius: 999px;
+		background: var(--color-bg-subtle);
+		border: 1px solid var(--color-border);
+	}
+
+	.stage-pill strong {
+		font-size: 0.82rem;
+		color: var(--color-slate-700);
+		padding-right: 0.2rem;
+	}
+
+	.workspace-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.9fr);
+		gap: 1rem;
+		align-items: start;
+	}
+
 	.panel {
 		padding: 1.25rem;
-		border-radius: 1rem;
+		border-radius: 1.2rem;
 		background: var(--color-bg-elevated);
 		border: 1px solid var(--color-border);
+		box-shadow: var(--shadow-xs);
+	}
+
+	.panel--feature {
+		background:
+			linear-gradient(180deg, rgba(37, 99, 235, 0.035), transparent 38%),
+			var(--color-bg-elevated);
+	}
+
+	.panel--draft {
+		display: grid;
+		gap: 1rem;
+	}
+
+	.panel-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 0.9rem;
+		margin-bottom: 1rem;
+		flex-wrap: wrap;
+	}
+
+	.panel-head h2 {
+		margin: 0;
+		font-size: 1.32rem;
+		line-height: 1.05;
+	}
+
+	.panel-eyebrow {
+		margin: 0 0 0.3rem;
+		font-size: 0.72rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+		color: var(--color-blue-700);
+	}
+
+	.panel-subtitle {
+		margin: 0.35rem 0 0;
+		max-width: 36rem;
+		font-size: 0.88rem;
+		line-height: 1.6;
+		color: var(--color-slate-500);
+	}
+
+	.feature-chip {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.32rem 0.7rem;
+		border-radius: 999px;
+		background: rgba(37, 99, 235, 0.08);
+		color: var(--color-blue-700);
+		font-size: 0.76rem;
+		font-weight: 700;
+		border: 1px solid rgba(37, 99, 235, 0.14);
 	}
 
 	.row {
@@ -1074,33 +1474,8 @@
 		gap: 0.75rem;
 	}
 
-	.manual-dropdown {
-		border: 1px solid var(--color-border);
-		border-radius: 0.8rem;
-		padding: 0.35rem 0.65rem;
-		background: var(--color-bg-elevated);
-	}
-
-	.manual-dropdown summary {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.65rem;
-		cursor: pointer;
-		user-select: none;
-		padding: 0.28rem 0;
-		font-weight: 700;
-		color: #1f2937;
-	}
-
-	.manual-dropdown summary small {
-		font-size: 0.72rem;
-		font-weight: 600;
-		color: var(--color-slate-500);
-	}
-
-	.manual-body {
-		padding-top: 0.8rem;
+	.no-margin {
+		margin-bottom: 0;
 	}
 
 	label {
@@ -1115,21 +1490,136 @@
 		box-sizing: border-box;
 		font: inherit;
 		padding: 0.72rem 0.85rem;
-		border-radius: 0.7rem;
+		border-radius: 0.8rem;
 		border: 1px solid var(--color-border-strong);
 		background: var(--color-bg-elevated);
+		transition:
+			border-color var(--transition-fast),
+			box-shadow var(--transition-fast),
+			background var(--transition-fast);
+	}
+
+	input:focus,
+	select:focus,
+	textarea:focus {
+		outline: none;
+		border-color: var(--color-blue-500);
+		box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.09);
+	}
+
+	.analyzer-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.92fr);
+		gap: 1rem;
+		align-items: start;
+	}
+
+	.analyzer-form,
+	.analyzer-hints {
+		display: grid;
+		gap: 0.85rem;
+	}
+
+	.tip-card {
+		display: grid;
+		gap: 0.35rem;
+		padding: 0.95rem 1rem;
+		border-radius: 1rem;
+		border: 1px solid var(--color-border);
+		background: var(--color-bg-subtle);
+	}
+
+	.tip-number {
+		font-size: 0.72rem;
+		font-weight: 700;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--color-blue-700);
+	}
+
+	.tip-card strong {
+		font-size: 0.92rem;
+		color: var(--color-slate-900);
+	}
+
+	.tip-card p {
+		margin: 0;
+		font-size: 0.82rem;
+		line-height: 1.6;
+		color: var(--color-slate-500);
+	}
+
+	.manual-dropdown {
+		border: 1px solid var(--color-border);
+		border-radius: 1rem;
+		padding: 0.35rem 0.8rem;
+		background: linear-gradient(180deg, rgba(248, 250, 252, 0.85), #fff);
+	}
+
+	.manual-dropdown summary {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 0.75rem;
+		cursor: pointer;
+		user-select: none;
+		padding: 0.45rem 0;
+		color: #1f2937;
+	}
+
+	.manual-summary {
+		display: grid;
+		gap: 0.2rem;
+	}
+
+	.manual-summary span {
+		font-size: 0.95rem;
+		font-weight: 700;
+		color: var(--color-slate-900);
+	}
+
+	.manual-summary small {
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--color-slate-500);
+	}
+
+	.manual-toggle {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 2rem;
+		height: 2rem;
+		border-radius: 999px;
+		background: var(--color-bg-subtle);
+		color: var(--color-slate-700);
+		font-size: 1.1rem;
+		font-weight: 700;
+	}
+
+	.manual-body {
+		padding-top: 1rem;
 	}
 
 	.alert {
 		padding: 0.8rem 0.95rem;
-		border-radius: 0.8rem;
+		border-radius: 1rem;
 		font-size: 0.9rem;
+		border: 1px solid rgba(202, 138, 4, 0.18);
+		background: rgba(254, 249, 195, 0.55);
+	}
+
+	.preview-card {
+		border-radius: 1rem;
+		border: 1px solid var(--color-border);
+		background: linear-gradient(180deg, rgba(248, 250, 252, 0.86), #fff);
+		padding: 1rem;
 	}
 
 	.preview {
 		display: grid;
 		grid-template-columns: minmax(0, 280px) 1fr;
-		gap: 1rem;
+		gap: 1.1rem;
 		align-items: start;
 	}
 
@@ -1191,18 +1681,22 @@
 		font-size: 0.9rem;
 	}
 
-	.list-head {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 1rem;
-		gap: 0.7rem;
+	.draft-grid {
+		display: grid;
+		grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.9fr);
+		gap: 1rem;
+		align-items: start;
 	}
 
-	.empty {
-		text-align: center;
-		color: var(--color-slate-500);
-		padding: 1.5rem;
+	.draft-fields {
+		display: grid;
+		gap: 0.2rem;
+	}
+
+	.draft-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.55rem;
 	}
 
 	.category-label-row {
@@ -1210,6 +1704,68 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 0.75rem;
+	}
+
+	.backlog-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 1rem;
+		margin-bottom: 1rem;
+		flex-wrap: wrap;
+	}
+
+	.backlog-caption {
+		margin: 0.35rem 0 0;
+		color: var(--color-slate-500);
+		font-size: 0.9rem;
+	}
+
+	.backlog-toolbar {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+		flex-wrap: wrap;
+	}
+
+	.backlog-meta-strip {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0.75rem;
+		margin-bottom: 1rem;
+	}
+
+	.mini-stat {
+		display: grid;
+		gap: 0.35rem;
+		padding: 0.9rem 1rem;
+		border-radius: 1rem;
+		border: 1px solid var(--color-border);
+		background: var(--color-bg-subtle);
+	}
+
+	.mini-stat span {
+		font-size: 0.72rem;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--color-slate-500);
+	}
+
+	.mini-stat strong {
+		font-family: var(--font-heading);
+		font-size: 1.45rem;
+		line-height: 1;
+		color: var(--color-slate-900);
+	}
+
+	.empty {
+		text-align: center;
+		color: var(--color-slate-500);
+		padding: 1.6rem;
+		border: 1px dashed var(--color-border-medium);
+		border-radius: 1rem;
+		background: var(--color-bg-subtle);
 	}
 
 	.category-groups {
@@ -1276,8 +1832,6 @@
 		grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
 		gap: 0.9rem;
 	}
-
-
 
 	/* Context menu */
 	.ctx-overlay {
@@ -1384,129 +1938,18 @@
 		cursor: pointer;
 	}
 
-
-	/* ── Dashboard ── */
-	.dashboard {
-		display: grid;
-		gap: 0.65rem;
-	}
-
-	.dash-cards {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 0.6rem;
-	}
-
-	.dash-row {
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		gap: 0.6rem;
-	}
-
-	.dash-group {
-		background: var(--color-bg-elevated);
-		border: 1px solid var(--color-border);
-		border-radius: 0.9rem;
-		padding: 0.75rem 0.9rem;
-		display: grid;
-		gap: 0.45rem;
-	}
-
-	.dash-group-label {
-		margin: 0;
-		font-size: 0.7rem;
-		text-transform: uppercase;
-		letter-spacing: 0.08em;
-		font-weight: 700;
-		color: var(--color-slate-400);
-	}
-
-	.dash-pills {
+	.panel-actions {
 		display: flex;
+		gap: 0.55rem;
 		flex-wrap: wrap;
-		gap: 0.35rem;
-	}
-
-	.dash-pill-count {
-		font-size: var(--text-sm);
-		font-weight: var(--fw-bold);
-		color: var(--color-slate-700);
-		min-width: 1.2rem;
-		text-align: center;
-	}
-
-	@media (max-width: 900px) {
-		.preview {
-			grid-template-columns: 1fr;
-		}
-
-		.row-inline {
-			grid-template-columns: 1fr;
-		}
-
-		.dash-cards {
-			grid-template-columns: 1fr 1fr;
-		}
-
-		.dash-row {
-			grid-template-columns: 1fr;
-		}
-
-	}
-
-	@media (max-width: 640px) {
-		.list-head,
-		.panel-actions {
-			flex-direction: column;
-			align-items: stretch;
-		}
-
-		.grid {
-			grid-template-columns: 1fr;
-		}
-
-		.dash-cards {
-			grid-template-columns: 1fr;
-		}
-
-		.ctx-menu {
-			left: 0 !important;
-			right: 0;
-			bottom: 0;
-			top: auto !important;
-			width: auto;
-			border-radius: 1rem 1rem 0 0;
-			padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-		}
-
-		.export-btn,
-		.toggle-btn {
-			width: 100%;
-		}
-	}
-
-	.export-btn {
-		border: 1px solid var(--color-border-strong);
-		background: var(--color-bg-subtle);
-		color: var(--color-slate-600);
-		padding: 0.3rem 0.7rem;
-		border-radius: 0.55rem;
-		font-size: 0.75rem;
-		font-weight: 700;
-		cursor: pointer;
-		white-space: nowrap;
-	}
-
-	.export-btn:hover {
-		background: var(--color-border);
 	}
 
 	.toggle-btn {
 		border: 1px solid rgba(22, 163, 74, 0.25);
 		background: rgba(22, 163, 74, 0.07);
 		color: #166534;
-		padding: 0.3rem 0.7rem;
-		border-radius: 0.55rem;
+		padding: 0.45rem 0.8rem;
+		border-radius: 999px;
 		font-size: 0.75rem;
 		font-weight: 700;
 		cursor: pointer;
@@ -1522,10 +1965,58 @@
 		border-color: rgba(22, 163, 74, 0.45);
 	}
 
-	.panel-actions {
-		display: flex;
-		gap: 0.5rem;
-		flex-wrap: wrap;
+	@media (max-width: 900px) {
+		.hero-shell,
+		.workspace-grid,
+		.analyzer-grid,
+		.draft-grid,
+		.hero-band,
+		.hero-stats,
+		.backlog-meta-strip,
+		.preview {
+			grid-template-columns: 1fr;
+		}
+
+		.row-inline {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	@media (max-width: 640px) {
+		.hero-main,
+		.panel {
+			padding: 1rem;
+		}
+
+		.hero-title {
+			font-size: 2.4rem;
+		}
+
+		.hero-actions,
+		.panel-actions {
+			flex-direction: column;
+			align-items: stretch;
+		}
+
+		.grid {
+			grid-template-columns: 1fr;
+		}
+
+		.ctx-menu {
+			left: 0 !important;
+			right: 0;
+			bottom: 0;
+			top: auto !important;
+			width: auto;
+			border-radius: 1rem 1rem 0 0;
+			padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+		}
+
+		.hero-actions :global(.btn),
+		.draft-actions :global(.btn),
+		.toggle-btn {
+			width: 100%;
+		}
 	}
 
 	/* Auto-categorize */
