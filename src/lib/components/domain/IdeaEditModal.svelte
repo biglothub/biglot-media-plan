@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { marked } from 'marked';
-	import { Button, toast } from '$lib';
+	import { Button, Modal, toast } from '$lib';
 	import { supabase, hasSupabaseConfig } from '$lib/supabase';
 	import { TEAM_MEMBERS } from '$lib/team';
 	import type {
@@ -15,8 +15,8 @@
 	} from '$lib/types';
 	import {
 		backlogCode,
-		CONTENT_CATEGORY_ORDER,
-		contentCategoryLabel,
+		CONTENT_CATEGORY_OPTIONS,
+		CONTENT_TYPE_OPTIONS,
 		contentTypeLabel,
 		fromCategorySelectValue,
 		platformLabel,
@@ -28,20 +28,14 @@
 	} from '$lib/media-plan';
 
 	interface Props {
+		open?: boolean;
 		idea: IdeaBacklogRow;
 		calEntry: ProductionCalendarRow | undefined;
 		onclose: () => void;
 		onsaved: () => void;
 	}
 
-	let { idea, calEntry, onclose, onsaved }: Props = $props();
-
-	const CONTENT_CATEGORY_OPTIONS = [
-		{ value: '' as const, label: 'ไม่ระบุ' },
-		...CONTENT_CATEGORY_ORDER.map((cat) => ({ value: cat as BacklogContentCategory, label: contentCategoryLabel[cat] })),
-	];
-
-	const contentTypeOptions = ['video', 'post', 'image', 'live'] as const;
+	let { open = $bindable(true), idea, calEntry, onclose, onsaved }: Props = $props();
 
 	type EditForm = {
 		url: string;
@@ -256,17 +250,16 @@
 	}
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="modal-overlay" onclick={onclose} onkeydown={(e) => { if (e.key === 'Escape') onclose(); }}>
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="modal-box" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
-	<div class="modal-header">
-		<div class="modal-title">
-			<p class="modal-code">{backlogCode(idea)}</p>
-			<h3>{idea.title ?? 'Untitled idea'}</h3>
+<Modal bind:open size="lg" {onclose}>
+	{#snippet header()}
+		<div class="modal-title-header">
+			<div class="modal-title-block">
+				<p class="modal-code">{backlogCode(idea)}</p>
+				<h3>{idea.title ?? 'Untitled idea'}</h3>
+			</div>
+			<button class="modal-close" type="button" onclick={onclose} aria-label="Close dialog">✕</button>
 		</div>
-		<button class="modal-close" onclick={onclose}>✕</button>
-	</div>
+	{/snippet}
 
 	<div class="edit-row-inline">
 		<div class="edit-row">
@@ -280,7 +273,7 @@
 		<div class="edit-row">
 			<label for="edit-content-type">Content Type</label>
 			<select id="edit-content-type" bind:value={editForm.content_type}>
-				{#each contentTypeOptions as option}
+				{#each CONTENT_TYPE_OPTIONS as option}
 					<option value={option}>{contentTypeLabel[option]}</option>
 				{/each}
 			</select>
@@ -429,40 +422,40 @@
 		{/if}
 		{#if notesViewMode === 'preview' && editForm.notes}
 			<div class="notes-preview-wrap">
-				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-				<div class="notes-preview" onclick={() => { notesViewMode = 'edit'; }}>
+				<div
+					class="notes-preview"
+					role="button"
+					tabindex="0"
+					onclick={() => { notesViewMode = 'edit'; }}
+					onkeydown={(event) => {
+						if (event.key === 'Enter' || event.key === ' ') {
+							event.preventDefault();
+							notesViewMode = 'edit';
+						}
+					}}
+				>
 					{@html notesRendered}
 				</div>
-				<button class="notes-expand-btn" onclick={() => { showPlanExpanded = true; }} title="ขยายเพื่ออ่าน">⤢</button>
+				<button class="notes-expand-btn" type="button" onclick={() => { showPlanExpanded = true; }} title="ขยายเพื่ออ่าน">⤢</button>
 			</div>
 		{:else}
 			<textarea id="edit-notes" bind:value={editForm.notes} rows={6} placeholder="กด Generate Plan เพื่อให้ AI วางแผนการถ่าย หรือกรอกเอง..."></textarea>
 		{/if}
 	</div>
 
-	<div class="modal-footer">
+	{#snippet footer()}
 		<Button variant="primary" onclick={saveEdit} loading={savingEdit} disabled={!hasSupabaseConfig}>
 			{savingEdit ? 'Saving...' : 'Save Changes'}
 		</Button>
 		<Button variant="ghost" onclick={onclose}>Cancel</Button>
-	</div>
-</div>
-</div>
+	{/snippet}
+</Modal>
 
-{#if showPlanExpanded}
-	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-	<div class="modal-overlay plan-expand-overlay" onclick={() => { showPlanExpanded = false; }}>
-	<div class="modal-box plan-expand-box" onclick={(e) => e.stopPropagation()} onkeydown={(e) => { if (e.key === 'Escape') showPlanExpanded = false; }}>
-		<div class="plan-expand-header">
-			<span class="plan-expand-title">✦ Content Plan</span>
-			<button class="modal-close" onclick={() => { showPlanExpanded = false; }}>✕</button>
-		</div>
-		<div class="plan-expand-body notes-preview">
-			{@html notesRendered}
-		</div>
+<Modal bind:open={showPlanExpanded} title="✦ Content Plan" size="lg" onclose={() => { showPlanExpanded = false; }}>
+	<div class="plan-expand-body notes-preview">
+		{@html notesRendered}
 	</div>
-	</div>
-{/if}
+</Modal>
 
 <style>
 	label {
@@ -486,17 +479,18 @@
 		resize: vertical;
 	}
 
-	.modal-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: flex-start;
-		gap: 0.5rem;
-	}
-
-	.modal-title {
+	.modal-title-block {
 		display: grid;
 		gap: 0.15rem;
 		min-width: 0;
+	}
+
+	.modal-title-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 0.75rem;
+		width: 100%;
 	}
 
 	.modal-code {
@@ -508,7 +502,7 @@
 		letter-spacing: 0.05em;
 	}
 
-	.modal-header h3 {
+	.modal-title-block h3 {
 		margin: 0;
 		font-size: 1.05rem;
 		font-family: var(--font-heading);
@@ -564,7 +558,7 @@
 		display: grid;
 		gap: 0.35rem;
 		padding: 0.55rem;
-		border: 1px solid rgba(15, 23, 42, 0.09);
+		border: 1px solid var(--color-border);
 		border-radius: 0.7rem;
 	}
 
@@ -583,7 +577,7 @@
 	.role-input {
 		width: 100%;
 		padding: 0.4rem 0.6rem;
-		border: 1px solid rgba(15, 23, 42, 0.15);
+		border: 1px solid var(--color-border-strong);
 		border-radius: 0.55rem;
 		font-size: 0.85rem;
 		font-family: inherit;
@@ -594,13 +588,6 @@
 		outline: none;
 		border-color: #2563eb;
 		box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
-	}
-
-	.modal-footer {
-		display: flex;
-		gap: 0.5rem;
-		justify-content: flex-end;
-		padding-top: 0.3rem;
 	}
 
 	.notes-label-row {
@@ -661,33 +648,6 @@
 
 	.notes-expand-btn:hover {
 		background: var(--color-slate-100);
-		color: var(--color-slate-900);
-	}
-
-	.plan-expand-overlay {
-		z-index: 1100;
-	}
-
-	.plan-expand-box {
-		z-index: 1101;
-		width: min(780px, calc(100vw - 2rem));
-		max-height: calc(100vh - 3rem);
-		display: flex;
-		flex-direction: column;
-	}
-
-	.plan-expand-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 1rem 1.25rem 0.75rem;
-		border-bottom: 1px solid #e2e8f0;
-		flex-shrink: 0;
-	}
-
-	.plan-expand-title {
-		font-weight: 700;
-		font-size: 1rem;
 		color: var(--color-slate-900);
 	}
 
@@ -814,7 +774,6 @@
 		.edit-row-inline { grid-template-columns: 1fr; }
 	}
 
-	@media (max-width: 640px) {
-		.modal-footer { flex-direction: column; align-items: stretch; }
-	}
+
+
 </style>

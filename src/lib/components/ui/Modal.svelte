@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { onMount } from 'svelte';
 
   type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | 'full';
 
@@ -51,7 +50,9 @@
     if (open) {
       document.body.style.overflow = 'hidden';
       // Move focus into modal after render
-      setTimeout(() => dialogEl?.querySelector<HTMLElement>('button, [tabindex="0"]')?.focus(), 50);
+      setTimeout(() => {
+        (dialogEl?.querySelector<HTMLElement>('button, [tabindex="0"], input, select, textarea, a[href]') ?? dialogEl)?.focus();
+      }, 50);
     } else {
       document.body.style.overflow = '';
     }
@@ -59,7 +60,10 @@
   });
 </script>
 
-<svelte:window on:keydown={open ? handleKeydown : undefined} />
+<svelte:window
+  on:keydown={open ? handleKeydown : undefined}
+  on:focusin={open ? trapFocus : undefined}
+/>
 
 {#if open}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -67,13 +71,14 @@
   <div
     class="modal-overlay"
     onclick={handleOverlayClick}
-    role="dialog"
-    aria-modal="true"
-    aria-label={title ?? 'Dialog'}
   >
     <div
       bind:this={dialogEl}
       class="modal-box modal-box--{size}"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title ?? 'Dialog'}
+      tabindex="-1"
     >
       <!-- Header -->
       {#if header}
@@ -83,7 +88,7 @@
       {:else if title}
         <div class="modal-header">
           <h2 class="modal-title">{title}</h2>
-          <button class="modal-close" onclick={close} aria-label="Close dialog">
+          <button class="modal-close" type="button" onclick={close} aria-label="Close dialog">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
               <line x1="18" y1="6" x2="6" y2="18"/>
               <line x1="6" y1="6" x2="18" y2="18"/>

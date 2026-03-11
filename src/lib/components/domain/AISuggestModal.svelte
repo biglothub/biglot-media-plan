@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { toast } from '$lib';
+	import { Modal, toast } from '$lib';
 	import type { BacklogContentCategory } from '$lib/types';
 
 	interface Props {
@@ -18,13 +18,14 @@
 	let { open = $bindable(), onadded }: Props = $props();
 
 	let showCustomPromptModal = $state(false);
-	let showSuggestModal = $state(false);
-	let suggestLoading = $state(false);
-	let suggestions = $state<IdeaSuggestion[]>([]);
-	let suggestError = $state('');
-	let acceptingIndex = $state<number | null>(null);
-	let customPrompt = $state('');
-	let customPromptError = $state('');
+let showSuggestModal = $state(false);
+let suggestLoading = $state(false);
+let suggestions = $state<IdeaSuggestion[]>([]);
+let suggestError = $state('');
+let acceptingIndex = $state<number | null>(null);
+let customPrompt = $state('');
+let customPromptError = $state('');
+const customPromptId = 'ai-suggest-custom-prompt';
 
 	async function suggestIdeas() {
 		showSuggestModal = true;
@@ -93,18 +94,8 @@
 	}
 </script>
 
-{#if open}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="modal-overlay" onclick={() => { open = false; }} onkeydown={(e) => { if (e.key === 'Escape') open = false; }}>
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="modal-box mode-box" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
-		<div class="modal-header">
-			<div class="modal-title">
-				<p class="modal-code">ช่วยคิด IDEA</p>
-				<h3>เลือกวิธีการ</h3>
-			</div>
-			<button class="modal-close" onclick={() => { open = false; }}>✕</button>
-		</div>
+<Modal bind:open title="เลือกวิธีการ" size="sm">
+	<div class="mode-body">
 		<button class="btn-primary" onclick={() => { open = false; suggestIdeas(); }}>
 			✦ ให้ AI เสนอแนะ (Suggest Ideas)
 		</button>
@@ -120,23 +111,13 @@
 			✏️ พิมพ์ prompt เอง (Manual)
 		</button>
 	</div>
-	</div>
-{/if}
+</Modal>
 
-{#if showCustomPromptModal}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="modal-overlay" onclick={() => { showCustomPromptModal = false; }} onkeydown={(e) => { if (e.key === 'Escape') showCustomPromptModal = false; }}>
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="modal-box prompt-box" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
-		<div class="modal-header">
-			<div class="modal-title">
-				<p class="modal-code">CUSTOM PROMPT</p>
-				<h3>พิมพ์ได้ตามใจ</h3>
-			</div>
-			<button class="modal-close" onclick={() => { showCustomPromptModal = false; }}>✕</button>
-		</div>
-		<label class="prompt-label">ป้อน prompt เพื่อให้ AI เสนอ idea ตามที่ต้องการ</label>
+<Modal bind:open={showCustomPromptModal} title="พิมพ์ได้ตามใจ" size="sm">
+	<div class="prompt-body">
+		<label class="prompt-label" for={customPromptId}>ป้อน prompt เพื่อให้ AI เสนอ idea ตามที่ต้องการ</label>
 		<textarea
+			id={customPromptId}
 			bind:value={customPrompt}
 			placeholder="เช่น 'ช่วยคิด idea สำหรับ TikTok เกี่ยวกับ forex trading tips'"
 			rows={5}
@@ -158,64 +139,49 @@
 			</button>
 		</div>
 	</div>
-	</div>
-{/if}
+</Modal>
 
-{#if showSuggestModal}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="modal-overlay" onclick={() => { showSuggestModal = false; }} onkeydown={(e) => { if (e.key === 'Escape') showSuggestModal = false; }}>
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="modal-box suggest-modal" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
-		<div class="modal-header">
-			<div class="modal-title">
-				<p class="modal-code">AI SUGGEST</p>
-				<h3>ช่วยคิด Content Idea</h3>
+<Modal bind:open={showSuggestModal} title="ช่วยคิด Content Idea" size="lg">
+	{#if suggestLoading}
+		<div class="suggest-loading">
+			<p class="suggest-loading-label">✦ AI กำลังคิด idea...</p>
+			<div class="progress-track">
+				<div class="progress-bar"></div>
 			</div>
-			<button class="modal-close" onclick={() => { showSuggestModal = false; }}>✕</button>
+			<p class="suggest-loading-sub">กำลังวิเคราะห์ backlog และสร้าง ideas ที่เหมาะกับธุรกิจ IB</p>
 		</div>
-
-		{#if suggestLoading}
-			<div class="suggest-loading">
-				<p class="suggest-loading-label">✦ AI กำลังคิด idea...</p>
-				<div class="progress-track">
-					<div class="progress-bar"></div>
-				</div>
-				<p class="suggest-loading-sub">กำลังวิเคราะห์ backlog และสร้าง ideas ที่เหมาะกับธุรกิจ IB</p>
-			</div>
-		{:else if suggestError}
-			<p class="notice-error">{suggestError}</p>
-			<button class="btn-primary" onclick={suggestIdeas}>ลองใหม่</button>
-		{:else if suggestions.length === 0}
-			<p class="suggest-empty">ไม่มี idea ที่แนะนำ ลองกด ช่วยคิด ใหม่อีกครั้ง</p>
-			<button class="btn-primary" onclick={suggestIdeas}>สร้าง idea ใหม่</button>
-		{:else}
-			<div class="suggest-list">
-				{#each suggestions as s, i}
-					<div class="suggest-card">
-						<div class="chip-row">
-							<span class="platform">{s.platform.toUpperCase()}</span>
-							<span class="category-chip category--{s.content_category}">{s.content_category}</span>
-						</div>
-						<p class="suggest-title">{s.title}</p>
-						<p class="suggest-desc">{s.description}</p>
-						<p class="suggest-reason">💡 {s.reason}</p>
-						<div class="suggest-actions">
-							<button
-								class="suggest-accept"
-								onclick={() => acceptSuggestion(s, i)}
-								disabled={acceptingIndex === i}
-							>
-								{acceptingIndex === i ? 'กำลังเพิ่ม...' : '+ เพิ่มเข้า Backlog'}
-							</button>
-						</div>
+	{:else if suggestError}
+		<p class="notice-error">{suggestError}</p>
+		<button class="btn-primary" onclick={suggestIdeas}>ลองใหม่</button>
+	{:else if suggestions.length === 0}
+		<p class="suggest-empty">ไม่มี idea ที่แนะนำ ลองกด ช่วยคิด ใหม่อีกครั้ง</p>
+		<button class="btn-primary" onclick={suggestIdeas}>สร้าง idea ใหม่</button>
+	{:else}
+		<div class="suggest-list">
+			{#each suggestions as s, i}
+				<div class="suggest-card">
+					<div class="chip-row">
+						<span class="platform">{s.platform.toUpperCase()}</span>
+						<span class="category-chip category--{s.content_category}">{s.content_category}</span>
 					</div>
-				{/each}
-			</div>
-			<button class="suggest-regenerate" onclick={suggestIdeas}>สร้าง idea ใหม่อีกชุด</button>
-		{/if}
-	</div>
-	</div>
-{/if}
+					<p class="suggest-title">{s.title}</p>
+					<p class="suggest-desc">{s.description}</p>
+					<p class="suggest-reason">💡 {s.reason}</p>
+					<div class="suggest-actions">
+						<button
+							class="suggest-accept"
+							onclick={() => acceptSuggestion(s, i)}
+							disabled={acceptingIndex === i}
+						>
+							{acceptingIndex === i ? 'กำลังเพิ่ม...' : '+ เพิ่มเข้า Backlog'}
+						</button>
+					</div>
+				</div>
+			{/each}
+		</div>
+		<button class="suggest-regenerate" onclick={suggestIdeas}>สร้าง idea ใหม่อีกชุด</button>
+	{/if}
+</Modal>
 
 <style>
 	textarea {
@@ -230,45 +196,11 @@
 		overflow-y: auto;
 	}
 
-	.modal-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: flex-start;
-		gap: 0.5rem;
+	.mode-body,
+	.prompt-body {
+		display: grid;
+		gap: var(--space-3);
 	}
-
-	.modal-title { display: grid; gap: 0.15rem; min-width: 0; }
-
-	.modal-code {
-		margin: 0;
-		font-size: 0.72rem;
-		font-weight: 700;
-		color: #b45309;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-	}
-
-	.modal-header h3 {
-		margin: 0;
-		font-size: 1.05rem;
-		font-family: var(--font-heading);
-	}
-
-	.modal-close {
-		border: 0;
-		background: transparent;
-		font-size: 1rem;
-		color: var(--color-slate-500);
-		cursor: pointer;
-		padding: 0.15rem 0.3rem;
-		border-radius: 0.4rem;
-	}
-
-	.modal-close:hover { background: rgba(15, 23, 42, 0.08); }
-
-	.mode-box { max-width: 480px; }
-	.prompt-box { max-width: 520px; }
-	.suggest-modal { max-width: 620px; }
 
 	.btn-primary {
 		width: 100%;

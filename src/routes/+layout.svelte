@@ -221,7 +221,7 @@
 			background: var(--color-bg-elevated);
 			backdrop-filter: blur(16px);
 			border-top: 1px solid var(--color-border);
-			box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.08);
+			box-shadow: 0 -8px 24px var(--color-border);
 		}
 
 		.bottom-nav a {
@@ -232,45 +232,6 @@
 		}
 	}
 
-	/* ── Global Modal (legacy inline modals) ── */
-	:global(.modal-overlay) {
-		position: fixed;
-		inset: 0;
-		z-index: var(--z-modal);
-		background: rgba(0, 0, 0, 0.45);
-		display: grid;
-		place-items: center;
-		padding: var(--space-4);
-	}
 
-	:global(.modal-box) {
-		background: var(--color-bg-elevated);
-		border-radius: var(--radius-xl);
-		padding: var(--space-6);
-		width: 100%;
-		max-width: 560px;
-		max-height: calc(100vh - 2rem);
-		overflow-y: auto;
-		overscroll-behavior: contain;
-		-webkit-overflow-scrolling: touch;
-		display: grid;
-		gap: var(--space-4);
-		align-content: start;
-		box-shadow: var(--shadow-xl);
-	}
 
-	@media (max-width: 640px) {
-		:global(.modal-overlay) {
-			padding: 0;
-			place-items: end stretch;
-		}
-
-		:global(.modal-box) {
-			max-width: none;
-			max-height: 92vh;
-			width: 100%;
-			border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
-			padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
-		}
-	}
 </style>
