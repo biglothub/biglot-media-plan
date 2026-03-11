@@ -639,7 +639,7 @@
 		letter-spacing: 0.16em; color: var(--color-primary); font-weight: 700;
 	}
 
-	.alert, .notice { padding: 0.8rem 0.95rem; border-radius: 0.8rem; font-size: 0.9rem; }
+	.alert { padding: 0.8rem 0.95rem; border-radius: 0.8rem; font-size: 0.9rem; }
 
 	.loading { text-align: center; color: var(--color-slate-500); padding: 2rem; }
 
@@ -710,7 +710,7 @@
 		overflow-y: auto;
 		background: var(--color-bg-elevated);
 		border-radius: 1rem;
-		border: 1px solid rgba(15,23,42,0.1);
+		border: 1px solid var(--color-border-medium);
 		padding: 1.1rem;
 		display: grid;
 		gap: 0.85rem;
@@ -739,13 +739,7 @@
 	}
 	.btn-ghost:hover { background: rgba(37,99,235,0.14); }
 
-	/* ── Detail Modal ── */
-	.modal-box {
-		max-width: 480px;
-	}
-
-
-	.modal-section { display: grid; gap: 0.65rem; padding-bottom: 0.8rem; border-bottom: 1px solid rgba(15,23,42,0.07); }
+	.modal-section { display: grid; gap: 0.65rem; padding-bottom: 0.8rem; border-bottom: 1px solid var(--color-border); }
 	.modal-section:last-of-type { border-bottom: none; padding-bottom: 0; }
 	.section-title { margin: 0; font-size: 0.82rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-slate-500); }
 
@@ -754,20 +748,20 @@
 	.form-field label { font-size: 0.78rem; font-weight: 600; color: var(--color-slate-600); }
 	.form-field input, .form-field select {
 		width: 100%; box-sizing: border-box; font: inherit; font-size: 0.85rem;
-		padding: 0.42rem 0.6rem; border: 1px solid rgba(15,23,42,0.15); border-radius: 0.55rem; background: var(--color-bg-elevated);
+		padding: 0.42rem 0.6rem; border: 1px solid var(--color-border-strong); border-radius: 0.55rem; background: var(--color-bg-elevated);
 	}
 	.form-field input:focus, .form-field select:focus { outline: none; border-color: var(--color-blue-600); box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
 
 	.metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; }
 
 	.assignment-list { display: grid; gap: 0.65rem; }
-	.assignment-row { display: grid; gap: 0.35rem; padding: 0.55rem; border: 1px solid rgba(15,23,42,0.09); border-radius: 0.7rem; }
+	.assignment-row { display: grid; gap: 0.35rem; padding: 0.55rem; border: 1px solid var(--color-border); border-radius: 0.7rem; }
 	.member-toggle { display: flex; align-items: center; gap: 0.45rem; cursor: pointer; }
 	.member-name { font-weight: 700; font-size: 0.9rem; }
-	.role-input { width: 100%; padding: 0.4rem 0.6rem; border: 1px solid rgba(15,23,42,0.15); border-radius: 0.55rem; font-size: 0.85rem; font-family: inherit; box-sizing: border-box; }
+	.role-input { width: 100%; padding: 0.4rem 0.6rem; border: 1px solid var(--color-border-strong); border-radius: 0.55rem; font-size: 0.85rem; font-family: inherit; box-sizing: border-box; }
 	.role-input:focus { outline: none; border-color: var(--color-blue-600); box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
 
-	.notes-input { width: 100%; padding: 0.5rem 0.6rem; border: 1px solid rgba(15,23,42,0.15); border-radius: 0.55rem; font-size: 0.85rem; font-family: inherit; box-sizing: border-box; resize: vertical; }
+	.notes-input { width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--color-border-strong); border-radius: 0.55rem; font-size: 0.85rem; font-family: inherit; box-sizing: border-box; resize: vertical; }
 	.notes-input:focus { outline: none; border-color: var(--color-blue-600); box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
 
 
@@ -784,7 +778,7 @@
 		}
 
 		.mobile-stage-strip button {
-			border: 1px solid rgba(15,23,42,0.08);
+			border: 1px solid var(--color-border);
 			background: var(--color-bg-elevated);
 			border-radius: 0.85rem;
 			padding: 0.6rem 0.7rem;
@@ -829,7 +823,7 @@
 			max-height: min(82vh, 44rem);
 			border-radius: 1.2rem 1.2rem 0 0;
 			padding-bottom: calc(1.1rem + env(safe-area-inset-bottom, 0px));
-			box-shadow: 0 -16px 40px rgba(15, 23, 42, 0.18);
+			box-shadow: var(--shadow-xl);
 		}
 
 		.preview-panel--mobile.landscape,

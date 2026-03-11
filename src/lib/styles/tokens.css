@@ -75,8 +75,10 @@
   /* ── Semantic Aliases ── */
   --color-bg:           #ffffff;
   --color-bg-elevated:  #ffffff;
-  --color-bg-subtle:    #ffffff;
-  --color-border:       rgba(15, 23, 42, 0.08);
+  --color-bg-subtle:    rgba(15, 23, 42, 0.04);
+  --color-border-subtle: rgba(15, 23, 42, 0.06);
+  --color-border:        rgba(15, 23, 42, 0.08);
+  --color-border-medium: rgba(15, 23, 42, 0.12);
   --color-border-strong: rgba(15, 23, 42, 0.14);
   --color-text:         var(--color-slate-900);
   --color-text-muted:   var(--color-slate-500);

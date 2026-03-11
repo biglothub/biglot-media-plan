@@ -178,7 +178,7 @@
   .kanban-card {
     background: var(--color-bg-elevated);
     border-radius: var(--radius-lg);
-    border: 1px solid rgba(15, 23, 42, 0.09);
+    border: 1px solid var(--color-border);
     border-left: 3px solid var(--stage-color, var(--color-slate-400));
     display: grid;
     cursor: grab;
@@ -212,7 +212,7 @@
     aspect-ratio: 16/9;
     object-fit: cover;
     display: block;
-    border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+    border-bottom: 1px solid var(--color-border-subtle);
   }
 
   /* ── Body ── */
@@ -291,6 +291,7 @@
     color: var(--color-slate-900);
     line-height: var(--leading-snug);
     display: -webkit-box;
+    line-clamp: 2;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;

@@ -35,7 +35,8 @@
     onchange
   }: Props = $props();
 
-  const uid = id ?? `textarea-${Math.random().toString(36).slice(2, 8)}`;
+  const fallbackId = `textarea-${Math.random().toString(36).slice(2, 8)}`;
+  const uid = $derived(id ?? fallbackId);
 
   let el: HTMLTextAreaElement | null = $state(null);
 
@@ -46,6 +47,7 @@
   }
 
   $effect(() => {
+    void value; // track value changes for programmatic updates
     if (autoresize) resize();
   });
 </script>

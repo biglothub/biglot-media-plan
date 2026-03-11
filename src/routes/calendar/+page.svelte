@@ -588,7 +588,6 @@
 		gap: 1rem;
 	}
 
-	h1,
 	h2,
 	h3,
 	h4 {
@@ -634,7 +633,7 @@
 	}
 
 	.mobile-panel {
-		border: 1px solid rgba(15, 23, 42, 0.09);
+		border: 1px solid var(--color-border);
 		border-radius: 0.9rem;
 		background: var(--color-bg-elevated);
 		padding: 0.8rem;
@@ -697,7 +696,7 @@
 
 	.idea-bank,
 	.calendar-shell {
-		border: 1px solid rgba(15, 23, 42, 0.09);
+		border: 1px solid var(--color-border);
 		border-radius: 0.85rem;
 		background: var(--color-bg-elevated);
 	}
@@ -741,7 +740,7 @@
 	}
 
 	.idea-card {
-		--platform-frame-color: rgba(15, 23, 42, 0.09);
+		--platform-frame-color: var(--color-border);
 		border: 1px solid var(--platform-frame-color);
 		padding: 0.55rem;
 		border-radius: 0.7rem;
@@ -846,7 +845,7 @@
 	.calendar-day {
 		min-height: 170px;
 		max-height: 280px;
-		border: 1px solid rgba(15, 23, 42, 0.09);
+		border: 1px solid var(--color-border);
 		border-radius: 0.8rem;
 		padding: 0.6rem;
 		display: grid;
@@ -888,7 +887,7 @@
 	}
 
 	.calendar-item {
-		--platform-frame-color: rgba(15, 23, 42, 0.1);
+		--platform-frame-color: var(--color-border-medium);
 		display: grid;
 		gap: 0.38rem;
 		padding: 0.5rem;
