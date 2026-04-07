@@ -1,9 +1,26 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { normalizeCarouselTextLetterSpacingEm, normalizeHashtags } from '$lib/carousel';
+import { normalizeCarouselQuoteFontScale, normalizeCarouselTextLetterSpacingEm, normalizeHashtags } from '$lib/carousel';
 import { supabase } from '$lib/supabase';
 import { getCarouselBundle, isMissingCarouselProjectColumnError, recomputeCarouselStatus } from '$lib/server/carousel-store';
-import type { CarouselFontPreset, CarouselProjectStatus } from '$lib/types';
+import type { CarouselContentMode, CarouselFontPreset, CarouselProjectStatus } from '$lib/types';
+
+function normalizeContentMode(value: unknown): CarouselContentMode {
+	return value === 'quote' ? 'quote' : 'standard';
+}
+
+function normalizeTextOrNull(value: unknown): string | null {
+	if (typeof value !== 'string') return null;
+	const normalized = value.trim();
+	return normalized ? normalized : null;
+}
+
+function normalizeAccountHandle(value: unknown): string | null {
+	const normalized = normalizeTextOrNull(value);
+	if (!normalized) return null;
+	const stripped = normalized.replace(/^@+/, '').trim();
+	return stripped ? stripped : null;
+}
 
 export const GET: RequestHandler = async ({ params }) => {
 	try {
@@ -27,16 +44,29 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		};
 
 		if (body.title !== undefined) updates.title = typeof body.title === 'string' ? body.title.trim() || null : null;
+		if (body.content_mode !== undefined) updates.content_mode = normalizeContentMode(body.content_mode);
 		if (body.font_preset !== undefined) updates.font_preset = body.font_preset as CarouselFontPreset;
 		if (body.text_letter_spacing_em !== undefined) {
 			updates.text_letter_spacing_em = normalizeCarouselTextLetterSpacingEm(body.text_letter_spacing_em);
 		}
-		if (body.visual_direction !== undefined) {
-			updates.visual_direction = typeof body.visual_direction === 'string' ? body.visual_direction.trim() || null : null;
+		if (body.quote_font_scale !== undefined) {
+			updates.quote_font_scale = normalizeCarouselQuoteFontScale(body.quote_font_scale);
 		}
-		if (body.caption !== undefined) updates.caption = typeof body.caption === 'string' ? body.caption.trim() || null : null;
+		if (body.visual_direction !== undefined) {
+			updates.visual_direction = normalizeTextOrNull(body.visual_direction);
+		}
+		if (body.caption !== undefined) updates.caption = normalizeTextOrNull(body.caption);
 		if (body.hashtags_json !== undefined) {
 			updates.hashtags_json = normalizeHashtags(Array.isArray(body.hashtags_json) ? body.hashtags_json : []);
+		}
+		if (body.account_display_name !== undefined) {
+			updates.account_display_name = normalizeTextOrNull(body.account_display_name);
+		}
+		if (body.account_handle !== undefined) {
+			updates.account_handle = normalizeAccountHandle(body.account_handle);
+		}
+		if (body.account_is_verified !== undefined) {
+			updates.account_is_verified = Boolean(body.account_is_verified);
 		}
 		if (body.last_exported_at !== undefined) {
 			updates.last_exported_at = typeof body.last_exported_at === 'string' ? body.last_exported_at : null;
@@ -53,7 +83,15 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		let pendingUpdates: Record<string, unknown> = { ...updates };
 		let { error } = await supabase.from('carousel_projects').update(pendingUpdates).eq('id', params.id);
 		while (error) {
-			const unsupportedColumns = ['font_preset', 'text_letter_spacing_em'].filter(
+			const unsupportedColumns = [
+				'content_mode',
+				'font_preset',
+				'text_letter_spacing_em',
+				'quote_font_scale',
+				'account_display_name',
+				'account_handle',
+				'account_is_verified'
+			].filter(
 				(column) => column in pendingUpdates && isMissingCarouselProjectColumnError(error, column)
 			);
 			if (unsupportedColumns.length === 0) break;

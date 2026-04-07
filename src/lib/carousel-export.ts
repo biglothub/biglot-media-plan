@@ -1,5 +1,13 @@
 import { carouselRoleLabel, toHashtagText } from '$lib/carousel';
-import type { CarouselProjectRow, CarouselSlideRow } from '$lib/types';
+import type { CarouselContentMode, CarouselProjectRow, CarouselSlideRow } from '$lib/types';
+
+type CarouselProjectExportLike = Pick<CarouselProjectRow, 'id' | 'backlog_id' | 'status' | 'title' | 'caption' | 'hashtags_json'> & {
+	content_mode?: CarouselContentMode | null;
+	account_display_name?: string | null;
+	account_handle?: string | null;
+	account_avatar_url?: string | null;
+	account_is_verified?: boolean | null;
+};
 
 export interface CarouselExportEntry {
 	slideId: string;
@@ -9,14 +17,19 @@ export interface CarouselExportEntry {
 }
 
 export interface CarouselExportManifest {
-	version: 1;
+	version: 2;
 	project_id: string;
 	backlog_id: string;
 	platform: 'instagram';
+	content_mode: CarouselContentMode;
 	status: string;
 	title: string | null;
 	caption: string | null;
 	hashtags: string[];
+	account_display_name: string | null;
+	account_handle: string | null;
+	account_avatar_url: string | null;
+	account_is_verified: boolean;
 	exported_at: string;
 	slides: Array<{
 		id: string;
@@ -45,20 +58,28 @@ export function buildCarouselExportEntries(slides: CarouselSlideRow[]): Carousel
 }
 
 export function buildCarouselExportManifest(
-	project: CarouselProjectRow,
+	project: CarouselProjectExportLike,
 	slides: CarouselSlideRow[],
 	exportedAt = new Date().toISOString()
 ): CarouselExportManifest {
 	const entries = buildCarouselExportEntries(slides);
 	return {
-		version: 1,
+		version: 2,
 		project_id: project.id,
 		backlog_id: project.backlog_id,
 		platform: 'instagram',
+		content_mode: project.content_mode ?? 'standard',
 		status: project.status,
 		title: project.title,
 		caption: project.caption,
 		hashtags: project.hashtags_json ?? [],
+		account_display_name: project.account_display_name ?? null,
+		account_handle:
+			typeof project.account_handle === 'string' && project.account_handle.trim()
+				? project.account_handle.trim().replace(/^@+/, '')
+				: null,
+		account_avatar_url: project.account_avatar_url ?? null,
+		account_is_verified: Boolean(project.account_is_verified),
 		exported_at: exportedAt,
 		slides: entries.map((entry) => {
 			const slide = slides.find((item) => item.id === entry.slideId);

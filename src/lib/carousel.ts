@@ -1,4 +1,10 @@
-import type { CarouselFontPreset, CarouselProjectRow, CarouselProjectStatus, CarouselSlideRow } from '$lib/types';
+import type {
+	CarouselContentMode,
+	CarouselFontPreset,
+	CarouselProjectRow,
+	CarouselProjectStatus,
+	CarouselSlideRow
+} from '$lib/types';
 
 export const INSTAGRAM_CAROUSEL_WIDTH = 1080;
 export const INSTAGRAM_CAROUSEL_HEIGHT = 1350;
@@ -7,7 +13,10 @@ export const DEFAULT_CAROUSEL_TEXT_LETTER_SPACING_EM = 0;
 export const CAROUSEL_TEXT_LETTER_SPACING_MIN_EM = -0.08;
 export const CAROUSEL_TEXT_LETTER_SPACING_MAX_EM = 0.24;
 export const CAROUSEL_TEXT_LETTER_SPACING_STEP_EM = 0.01;
-
+export const DEFAULT_CAROUSEL_QUOTE_FONT_SCALE = 1;
+export const CAROUSEL_QUOTE_FONT_SCALE_MIN = 0.8;
+export const CAROUSEL_QUOTE_FONT_SCALE_MAX = 1.3;
+export const CAROUSEL_QUOTE_FONT_SCALE_STEP = 0.05;
 export const CAROUSEL_PROJECT_STATUSES = ['draft', 'ready', 'exported', 'archived'] as const satisfies readonly CarouselProjectStatus[];
 
 export const carouselStatusLabel: Record<CarouselProjectStatus, string> = {
@@ -28,6 +37,31 @@ export const carouselLayoutLabel = {
 	content: 'Content',
 	cta: 'CTA'
 } as const;
+
+type CarouselProjectLike = Pick<CarouselProjectRow, 'status' | 'title' | 'caption'> & {
+	content_mode?: CarouselContentMode | null;
+	account_display_name?: string | null;
+	account_handle?: string | null;
+	account_avatar_url?: string | null;
+	account_is_verified?: boolean | null;
+};
+
+type CarouselSlideLike = Pick<
+	CarouselSlideRow,
+	'position' | 'role' | 'headline' | 'body' | 'cta' | 'visual_brief' | 'freepik_query' | 'selected_asset_json' | 'selected_asset_storage_path'
+>;
+
+function normalizeContentMode(value: unknown): CarouselContentMode {
+	return value === 'quote' ? 'quote' : 'standard';
+}
+
+function resolveContentMode(project?: CarouselProjectLike | null): CarouselContentMode {
+	return normalizeContentMode(project?.content_mode);
+}
+
+function hasNonEmptyString(value: string | null | undefined): boolean {
+	return Boolean(value?.trim());
+}
 
 export const CAROUSEL_FONT_PRESETS = [
 	{
@@ -97,6 +131,20 @@ export function normalizeCarouselTextLetterSpacingEm(value: unknown): number {
 	return Math.round(clamped * 1000) / 1000;
 }
 
+export function normalizeCarouselQuoteFontScale(value: unknown): number {
+	const parsed =
+		typeof value === 'number'
+			? value
+			: typeof value === 'string' && value.trim()
+				? Number(value)
+				: DEFAULT_CAROUSEL_QUOTE_FONT_SCALE;
+
+	if (!Number.isFinite(parsed)) return DEFAULT_CAROUSEL_QUOTE_FONT_SCALE;
+
+	const clamped = Math.min(CAROUSEL_QUOTE_FONT_SCALE_MAX, Math.max(CAROUSEL_QUOTE_FONT_SCALE_MIN, parsed));
+	return Math.round(clamped * 100) / 100;
+}
+
 export function normalizeHashtags(value: string[] | null | undefined): string[] {
 	if (!Array.isArray(value)) return [];
 
@@ -127,59 +175,79 @@ export function hasCarouselSlideAsset(slide: Pick<CarouselSlideRow, 'selected_as
 	return Boolean(slide.selected_asset_storage_path || slide.selected_asset_json?.storage_url);
 }
 
-export function hasCarouselSlideCopy(slide: Pick<CarouselSlideRow, 'role' | 'headline' | 'body' | 'cta' | 'visual_brief' | 'freepik_query'>): boolean {
-	const hasHeadline = Boolean(slide.headline?.trim());
-	const hasVisualBrief = Boolean(slide.visual_brief?.trim());
-	const hasQuery = Boolean(slide.freepik_query?.trim());
+export function hasCarouselSlideCopy(
+	slide: Pick<CarouselSlideRow, 'role' | 'headline' | 'body' | 'cta' | 'visual_brief' | 'freepik_query'>,
+	contentMode: CarouselContentMode = 'standard'
+): boolean {
+	const isQuoteMode = contentMode === 'quote';
+	const hasHeadline = hasNonEmptyString(slide.headline);
+	const hasVisualBrief = hasNonEmptyString(slide.visual_brief);
+	const requiresQuery = !isQuoteMode || slide.role === 'cta';
+	const hasQuery = !requiresQuery || hasNonEmptyString(slide.freepik_query);
+
 	if (!hasHeadline || !hasVisualBrief || !hasQuery) return false;
 	if (slide.role === 'cover') return true;
-	if (slide.role === 'body') return Boolean(slide.body?.trim());
-	return Boolean(slide.cta?.trim());
+	if (slide.role === 'body') return isQuoteMode ? true : hasNonEmptyString(slide.body);
+	return hasNonEmptyString(slide.cta);
 }
 
 export function getCarouselSlideBlockers(
-	slide: Pick<CarouselSlideRow, 'role' | 'headline' | 'body' | 'cta' | 'visual_brief' | 'freepik_query' | 'selected_asset_json' | 'selected_asset_storage_path'>
+	slide: CarouselSlideLike,
+	contentMode: CarouselContentMode = 'standard'
 ): string[] {
 	const blockers: string[] = [];
-	if (!slide.headline?.trim()) blockers.push('headline');
-	if (!slide.visual_brief?.trim()) blockers.push('visual brief');
-	if (!slide.freepik_query?.trim()) blockers.push('asset query');
-	if (slide.role === 'body' && !slide.body?.trim()) blockers.push('body copy');
-	if (slide.role === 'cta' && !slide.cta?.trim()) blockers.push('CTA');
-	if (!hasCarouselSlideAsset(slide)) blockers.push('selected asset');
+	const isQuoteMode = contentMode === 'quote';
+	if (!hasNonEmptyString(slide.headline)) blockers.push('headline');
+	if (!hasNonEmptyString(slide.visual_brief)) blockers.push('visual brief');
+	if (slide.role === 'cta') {
+		if (!hasNonEmptyString(slide.freepik_query)) blockers.push('asset query');
+		if (!hasNonEmptyString(slide.cta)) blockers.push('CTA');
+		if (!hasCarouselSlideAsset(slide)) blockers.push('selected asset');
+		return blockers;
+	}
+	if (!isQuoteMode && !hasNonEmptyString(slide.freepik_query)) blockers.push('asset query');
+	if (slide.role === 'body' && !isQuoteMode && !hasNonEmptyString(slide.body)) blockers.push('body copy');
+	if (!isQuoteMode && !hasCarouselSlideAsset(slide)) blockers.push('selected asset');
 	return blockers;
 }
 
 export function getCarouselSlideReadiness(
-	slide: Pick<CarouselSlideRow, 'role' | 'headline' | 'body' | 'cta' | 'visual_brief' | 'freepik_query' | 'selected_asset_json' | 'selected_asset_storage_path'>
+	slide: CarouselSlideLike,
+	contentMode: CarouselContentMode = 'standard'
 ): {
 	hasCopy: boolean;
 	hasAsset: boolean;
 	isReady: boolean;
 	blockers: string[];
 } {
-	const hasCopy = hasCarouselSlideCopy(slide);
+	const hasCopy = hasCarouselSlideCopy(slide, contentMode);
 	const hasAsset = hasCarouselSlideAsset(slide);
-	const blockers = getCarouselSlideBlockers(slide);
+	const blockers = getCarouselSlideBlockers(slide, contentMode);
+	const requiresAsset = contentMode === 'standard' || slide.role === 'cta';
 	return {
 		hasCopy,
 		hasAsset,
-		isReady: hasCopy && hasAsset,
+		isReady: hasCopy && (requiresAsset ? hasAsset : true),
 		blockers
 	};
 }
 
 export function getCarouselProjectBlockers(
-	project: Pick<CarouselProjectRow, 'title' | 'caption'> | null | undefined,
-	slides: Array<Pick<CarouselSlideRow, 'position' | 'role' | 'headline' | 'body' | 'cta' | 'visual_brief' | 'freepik_query' | 'selected_asset_json' | 'selected_asset_storage_path'>>
+	project: CarouselProjectLike | null | undefined,
+	slides: CarouselSlideLike[]
 ): string[] {
 	const blockers: string[] = [];
-	if (!project?.title?.trim()) blockers.push('Project title is missing');
-	if (!project?.caption?.trim()) blockers.push('Caption is missing');
+	const contentMode = resolveContentMode(project);
+	if (!hasNonEmptyString(project?.title)) blockers.push('Project title is missing');
+	if (!hasNonEmptyString(project?.caption)) blockers.push('Caption is missing');
+	if (contentMode === 'quote') {
+		if (!hasNonEmptyString(project?.account_display_name)) blockers.push('Account display name is missing');
+		if (!hasNonEmptyString(project?.account_avatar_url)) blockers.push('Account avatar is missing');
+	}
 	if (slides.length === 0) blockers.push('Generate slides before exporting');
 
 	for (const slide of slides) {
-		const slideBlockers = getCarouselSlideBlockers(slide);
+		const slideBlockers = getCarouselSlideBlockers(slide, contentMode);
 		if (slideBlockers.length === 0) continue;
 		blockers.push(`Slide ${slide.position}: ${slideBlockers.join(', ')}`);
 	}
@@ -188,17 +256,19 @@ export function getCarouselProjectBlockers(
 }
 
 export function deriveCarouselProjectStatus(
-	project: Pick<CarouselProjectRow, 'status' | 'title' | 'caption'> | null | undefined,
-	slides: Array<Pick<CarouselSlideRow, 'role' | 'headline' | 'body' | 'cta' | 'visual_brief' | 'freepik_query' | 'selected_asset_json' | 'selected_asset_storage_path'>>,
+	project: CarouselProjectLike | null | undefined,
+	slides: CarouselSlideLike[],
 	explicitStatus?: CarouselProjectStatus | null
 ): CarouselProjectStatus {
 	if (explicitStatus === 'archived') return 'archived';
 	if (explicitStatus === 'exported') return 'exported';
 	if (explicitStatus === 'draft' || explicitStatus === 'ready') return explicitStatus;
 	if (project?.status === 'archived') return 'archived';
-	if (!project?.title?.trim() || !project.caption?.trim()) return 'draft';
+	const blockers = getCarouselProjectBlockers(project, slides);
+	if (blockers.length > 0) return 'draft';
 	if (slides.length === 0) return 'draft';
 
-	const everySlideReady = slides.every((slide) => hasCarouselSlideCopy(slide) && hasCarouselSlideAsset(slide));
+	const contentMode = resolveContentMode(project);
+	const everySlideReady = slides.every((slide) => getCarouselSlideReadiness(slide, contentMode).isReady);
 	return everySlideReady ? 'ready' : 'draft';
 }

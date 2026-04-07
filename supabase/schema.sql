@@ -283,12 +283,21 @@ CREATE TABLE IF NOT EXISTS public.carousel_projects (
     CHECK (platform IN ('instagram')),
   status            text NOT NULL DEFAULT 'draft'
     CHECK (status IN ('draft', 'ready', 'exported', 'archived')),
+  content_mode      text NOT NULL DEFAULT 'standard'
+    CHECK (content_mode IN ('standard', 'quote')),
   font_preset       text NOT NULL DEFAULT 'biglot'
     CHECK (font_preset IN ('biglot', 'apple_clean', 'mitr_friendly', 'ibm_plex_thai', 'editorial_serif')),
+  quote_font_scale  numeric(4, 2) NOT NULL DEFAULT 1
+    CHECK (quote_font_scale >= 0.8 AND quote_font_scale <= 1.3),
   title             text,
   visual_direction  text,
   caption           text,
   hashtags_json     jsonb NOT NULL DEFAULT '[]'::jsonb,
+  account_display_name text,
+  account_handle       text,
+  account_avatar_url   text,
+  account_avatar_storage_path text,
+  account_is_verified boolean NOT NULL DEFAULT false,
   slide_count       integer NOT NULL DEFAULT 0,
   last_generated_at timestamptz,
   last_exported_at  timestamptz,

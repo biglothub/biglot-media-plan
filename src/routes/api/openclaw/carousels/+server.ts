@@ -2,7 +2,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { listCarouselProjects, ensureCarouselProject } from '$lib/server/carousel-store';
 import { createBacklogIdeaFromCarouselDraft } from '$lib/server/backlog';
-import type { BacklogContentCategory } from '$lib/types';
+import type { BacklogContentCategory, CarouselContentMode } from '$lib/types';
 
 export const GET: RequestHandler = async () => {
 	try {
@@ -17,6 +17,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	try {
 		const body = await request.json();
 		const backlogId = typeof body.backlog_id === 'string' ? body.backlog_id.trim() : '';
+		const contentMode: CarouselContentMode = body.content_mode === 'quote' ? 'quote' : 'standard';
 		let resolvedBacklogId = backlogId;
 
 		if (!resolvedBacklogId) {
@@ -35,7 +36,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			resolvedBacklogId = idea.id;
 		}
 
-		const project = await ensureCarouselProject(resolvedBacklogId);
+		const project = await ensureCarouselProject(resolvedBacklogId, { content_mode: contentMode });
 		return json(project, { status: 201 });
 	} catch (error) {
 		return json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });

@@ -5,9 +5,13 @@
 	import CarouselSlidePreview from '$lib/components/domain/CarouselSlidePreview.svelte';
 	import {
 		CAROUSEL_FONT_PRESETS,
+		CAROUSEL_QUOTE_FONT_SCALE_MAX,
+		CAROUSEL_QUOTE_FONT_SCALE_MIN,
+		CAROUSEL_QUOTE_FONT_SCALE_STEP,
 		CAROUSEL_TEXT_LETTER_SPACING_MAX_EM,
 		CAROUSEL_TEXT_LETTER_SPACING_MIN_EM,
 		CAROUSEL_TEXT_LETTER_SPACING_STEP_EM,
+		DEFAULT_CAROUSEL_QUOTE_FONT_SCALE,
 		DEFAULT_CAROUSEL_SLIDE_COUNT,
 		DEFAULT_CAROUSEL_TEXT_LETTER_SPACING_EM,
 		deriveCarouselProjectStatus,
@@ -16,13 +20,20 @@
 		getCarouselSlideReadiness,
 		INSTAGRAM_CAROUSEL_HEIGHT,
 		INSTAGRAM_CAROUSEL_WIDTH,
+		normalizeCarouselQuoteFontScale,
 		normalizeCarouselTextLetterSpacingEm,
 		normalizeHashtags,
 		carouselStatusLabel
 	} from '$lib/carousel';
 	import { buildCarouselExportEntries, buildCarouselExportManifest, buildPostingChecklist } from '$lib/carousel-export';
 	import { hasSupabaseConfig } from '$lib/supabase';
-	import type { CarouselAsset, CarouselProjectRow, CarouselProjectStatus, CarouselSlideRow } from '$lib/types';
+	import type {
+		CarouselAsset,
+		CarouselContentMode,
+		CarouselProjectRow,
+		CarouselProjectStatus,
+		CarouselSlideRow
+	} from '$lib/types';
 
 	type ProjectResponse = CarouselProjectRow & { carousel_slides?: CarouselSlideRow[] };
 
@@ -31,6 +42,8 @@
 	let loading = $state(false);
 	let generating = $state(false);
 	let savingProject = $state(false);
+	let updatingAccountAvatar = $state(false);
+	let removingAccountAvatar = $state(false);
 	let exporting = $state(false);
 	let autoPickingAssets = $state(false);
 	let savingSlideId = $state<string | null>(null);
@@ -40,9 +53,12 @@
 	let hashtagsInput = $state('');
 
 	const projectId = $derived(page.params.id);
-	const readyToExport = $derived(deriveCarouselProjectStatus(project, slides) === 'ready' || project?.status === 'exported');
+	const contentMode = $derived(project?.content_mode ?? 'standard');
+	const isQuoteMode = $derived(contentMode === 'quote');
+	const computedStatus = $derived(deriveCarouselProjectStatus(project, slides));
 	const projectBlockers = $derived(getCarouselProjectBlockers(project, slides));
-	const readySlidesCount = $derived(slides.filter((slide) => getCarouselSlideReadiness(slide).isReady).length);
+	const readyToExport = $derived(computedStatus === 'ready' || project?.status === 'exported');
+	const readySlidesCount = $derived(slides.filter((slide) => getCarouselSlideReadiness(slide, contentMode).isReady).length);
 
 	function statusVariant(status: CarouselProjectStatus | undefined): 'warning' | 'success' | 'info' | 'neutral' {
 		if (status === 'ready') return 'success';
@@ -55,12 +71,19 @@
 		project = {
 			...body,
 			carousel_slides: undefined,
+			content_mode: normalizeContentMode(body.content_mode),
 			font_preset: body.font_preset ?? 'biglot',
 			text_letter_spacing_em: normalizeCarouselTextLetterSpacingEm(body.text_letter_spacing_em),
+			quote_font_scale: normalizeCarouselQuoteFontScale(body.quote_font_scale),
 			title: body.title ?? '',
 			visual_direction: body.visual_direction ?? '',
 			caption: body.caption ?? '',
-			hashtags_json: body.hashtags_json ?? []
+			hashtags_json: body.hashtags_json ?? [],
+			account_display_name: body.account_display_name ?? '',
+			account_handle: normalizeAccountHandle(body.account_handle),
+			account_avatar_url: body.account_avatar_url ?? '',
+			account_avatar_storage_path: body.account_avatar_storage_path ?? '',
+			account_is_verified: Boolean(body.account_is_verified)
 		};
 		slides = (body.carousel_slides ?? [])
 			.map((slide) => ({
@@ -85,6 +108,7 @@
 	}
 
 	function previewAssetForSlide(slide: CarouselSlideRow): string | null {
+		if (project?.content_mode === 'quote' && slide.role !== 'cta') return null;
 		return slide.selected_asset_json?.storage_url ?? slide.candidate_assets_json?.[0]?.preview_url ?? null;
 	}
 
@@ -93,13 +117,46 @@
 	}
 
 	function slideReadiness(slide: CarouselSlideRow) {
-		return getCarouselSlideReadiness(slide);
+		return getCarouselSlideReadiness(slide, contentMode);
 	}
 
 	const selectedFontPreset = $derived(getCarouselFontPresetDefinition(project?.font_preset ?? 'biglot'));
 	const selectedLetterSpacingLabel = $derived(
 		`${normalizeCarouselTextLetterSpacingEm(project?.text_letter_spacing_em ?? DEFAULT_CAROUSEL_TEXT_LETTER_SPACING_EM).toFixed(2)}em`
 	);
+	const selectedQuoteFontScaleLabel = $derived(
+		`${normalizeCarouselQuoteFontScale(project?.quote_font_scale ?? DEFAULT_CAROUSEL_QUOTE_FONT_SCALE).toFixed(2)}x`
+	);
+
+	function normalizeContentMode(value: unknown): CarouselContentMode {
+		return value === 'quote' ? 'quote' : 'standard';
+	}
+
+	function normalizeAccountHandle(value: unknown): string {
+		if (typeof value !== 'string') return '';
+		return value.trim().replace(/^@+/, '').replace(/\s+/g, '');
+	}
+
+	function formatAccountHandle(value: string | null | undefined): string {
+		const normalized = normalizeAccountHandle(value);
+		return normalized ? `@${normalized}` : '';
+	}
+
+	function getAccountInitials(value: string | null | undefined): string {
+		const cleaned = value?.trim() ?? '';
+		if (!cleaned) return 'Q';
+		const parts = cleaned.split(/\s+/).filter(Boolean);
+		const initials = parts
+			.slice(0, 2)
+			.map((part) => part[0] ?? '')
+			.join('')
+			.trim();
+		return (initials || cleaned[0] || 'Q').toUpperCase();
+	}
+
+	function isQuoteNonCtaSlide(slide: CarouselSlideRow): boolean {
+		return project?.content_mode === 'quote' && slide.role !== 'cta';
+	}
 
 	async function loadProject() {
 		loading = true;
@@ -149,12 +206,17 @@
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
+					content_mode: project.content_mode ?? 'standard',
 					title: project.title,
 					font_preset: project.font_preset,
 					text_letter_spacing_em: project.text_letter_spacing_em,
+					quote_font_scale: project.quote_font_scale,
 					visual_direction: project.visual_direction,
 					caption: project.caption,
-					hashtags_json: parseHashtagsInput(hashtagsInput)
+					hashtags_json: parseHashtagsInput(hashtagsInput),
+					account_display_name: project.account_display_name?.trim() || null,
+					account_handle: normalizeAccountHandle(project.account_handle) || null,
+					account_is_verified: Boolean(project.account_is_verified)
 				})
 			});
 			const body = await response.json();
@@ -169,6 +231,64 @@
 			toast.error('บันทึก project ไม่สำเร็จ');
 		} finally {
 			savingProject = false;
+		}
+	}
+
+	async function uploadAccountAvatar(event: Event) {
+		if (!project) return;
+
+		const input = event.currentTarget as HTMLInputElement | null;
+		const file = input?.files?.[0];
+		if (!file) return;
+
+		updatingAccountAvatar = true;
+		try {
+			const formData = new FormData();
+			formData.set('file', file);
+
+			const response = await fetch(`/api/openclaw/carousels/${projectId}/account-avatar`, {
+				method: 'POST',
+				body: formData
+			});
+			const body = await response.json();
+			if (!response.ok) {
+				toast.error(body.error ?? 'อัปโหลด account avatar ไม่สำเร็จ');
+				return;
+			}
+
+			await loadProject();
+			toast.success('อัปโหลด account avatar แล้ว');
+		} catch {
+			toast.error('อัปโหลด account avatar ไม่สำเร็จ');
+		} finally {
+			if (input) input.value = '';
+			updatingAccountAvatar = false;
+		}
+	}
+
+	async function removeAccountAvatar() {
+		if (!project || !project.account_avatar_url) return;
+
+		const confirmed = window.confirm('ลบ account avatar นี้ใช่ไหม?');
+		if (!confirmed) return;
+
+		removingAccountAvatar = true;
+		try {
+			const response = await fetch(`/api/openclaw/carousels/${projectId}/account-avatar`, {
+				method: 'DELETE'
+			});
+			const body = await response.json().catch(() => ({}));
+			if (!response.ok) {
+				toast.error(body.error ?? 'ลบ account avatar ไม่สำเร็จ');
+				return;
+			}
+
+			await loadProject();
+			toast.success('ลบ account avatar แล้ว');
+		} catch {
+			toast.error('ลบ account avatar ไม่สำเร็จ');
+		} finally {
+			removingAccountAvatar = false;
 		}
 	}
 
@@ -203,6 +323,8 @@
 	}
 
 	async function rerollAssets(slide: CarouselSlideRow) {
+		if (isQuoteNonCtaSlide(slide)) return;
+
 		rerollingSlideId = slide.id;
 		try {
 			const response = await fetch(`/api/openclaw/carousels/${projectId}/slides/${slide.id}/search-assets`, {
@@ -259,6 +381,7 @@
 
 		try {
 			for (const slide of slides) {
+				if (isQuoteNonCtaSlide(slide)) continue;
 				if (slideReadiness(slide).hasAsset) continue;
 
 				let candidates = slide.candidate_assets_json ?? [];
@@ -306,6 +429,11 @@
 				return;
 			}
 
+			if (unresolvedSlides.length === 0) {
+				toast.success('ไม่มี slide ที่ต้อง auto-pick asset เพิ่ม');
+				return;
+			}
+
 			toast.error('ยัง auto-pick asset ไม่ได้ ลองกด Reroll Assets หรือเลือกเอง');
 		} catch {
 			toast.error('Auto-pick assets ไม่สำเร็จ');
@@ -317,7 +445,7 @@
 	async function exportPackage() {
 		if (!project) return;
 		if (!readyToExport) {
-			toast.error('ต้องเลือก asset ให้ครบทุก slide ก่อน export');
+			toast.error(projectBlockers[0] ?? 'ยัง export ไม่ได้');
 			return;
 		}
 
@@ -399,10 +527,14 @@
 </script>
 
 <main class="page">
-	<PageHeader
+		<PageHeader
 		eyebrow="Carousel Studio"
 		title={project?.title ?? 'Carousel project'}
-		subtitle="ออกแบบ copy, ค้น asset ด้วย Pexels, แล้ว export เป็นชุดไฟล์พร้อมโพสต์บน Instagram"
+		subtitle={
+			isQuoteMode
+				? 'ออกแบบ quote-first carousel พร้อม account header, avatar workflow และ export package'
+				: 'ออกแบบ copy, ค้น asset ด้วย Pexels, แล้ว export เป็นชุดไฟล์พร้อมโพสต์บน Instagram'
+		}
 	>
 		{#snippet actions()}
 			<Button variant="secondary" href="/carousel">All Projects</Button>
@@ -433,6 +565,7 @@
 				<div class="hero-badges">
 					<Badge variant={statusVariant(project.status)} label={carouselStatusLabel[project.status]} />
 					<Badge variant="platform" value="instagram" />
+					<Badge variant="neutral" label={isQuoteMode ? 'Quote Mode' : 'Standard Mode'} />
 					<Badge variant="neutral" label={`${slides.length || DEFAULT_CAROUSEL_SLIDE_COUNT} slides`} />
 				</div>
 				<h2>{project.title ?? 'Untitled carousel'}</h2>
@@ -456,7 +589,13 @@
 					<div class="blocker-copy">
 						<p class="panel-kicker">Export blockers</p>
 						<h3>ยัง export ไม่ได้</h3>
-						<p>ตอนนี้พร้อมแล้ว {readySlidesCount}/{slides.length} slides ต้องเคลียร์รายการด้านล่างให้ครบก่อน</p>
+						<p>
+							{#if isQuoteMode}
+								Quote mode พร้อมแล้ว {readySlidesCount}/{slides.length} slides แต่ยังต้องเติม account header หรือเคลียร์ blocker ด้านล่างก่อน
+							{:else}
+								ตอนนี้พร้อมแล้ว {readySlidesCount}/{slides.length} slides ต้องเคลียร์รายการด้านล่างให้ครบก่อน
+							{/if}
+						</p>
 					</div>
 					<div class="blocker-actions">
 						<Button
@@ -479,7 +618,11 @@
 					<div class="blocker-copy">
 						<p class="panel-kicker">Export ready</p>
 						<h3>พร้อม export แล้ว</h3>
-						<p>ทุก slide มี copy และ asset ครบ สามารถกด Export Package ได้ทันที</p>
+						<p>
+							{isQuoteMode
+								? 'quote slides พร้อม copy และ CTA slide มี asset ครบ รวมถึง account header พร้อม export แล้ว'
+								: 'ทุก slide มี copy และ asset ครบ สามารถกด Export Package ได้ทันที'}
+						</p>
 					</div>
 				</section>
 			{/if}
@@ -493,6 +636,15 @@
 					</div>
 					<Button variant="secondary" onclick={saveProjectMeta} loading={savingProject}>Save Meta</Button>
 				</div>
+
+				<label>
+					<span>Content mode</span>
+					<select bind:value={project.content_mode}>
+						<option value="standard">standard</option>
+						<option value="quote">quote</option>
+					</select>
+					<small>Quote mode uses a text-first layout with an account header on every non-CTA slide.</small>
+				</label>
 
 				<label>
 					<span>Carousel title</span>
@@ -548,6 +700,32 @@
 					<small>ค่าลบทำให้ตัวอักษรชิดขึ้น ค่าบวกทำให้ช่องไฟกว้างขึ้น</small>
 				</label>
 
+				{#if isQuoteMode}
+					<label>
+						<span>Quote font size</span>
+						<div class="letter-spacing-field">
+							<input
+								type="range"
+								min={CAROUSEL_QUOTE_FONT_SCALE_MIN}
+								max={CAROUSEL_QUOTE_FONT_SCALE_MAX}
+								step={CAROUSEL_QUOTE_FONT_SCALE_STEP}
+								bind:value={project.quote_font_scale}
+							/>
+							<div class="letter-spacing-input">
+								<input
+									type="number"
+									min={CAROUSEL_QUOTE_FONT_SCALE_MIN}
+									max={CAROUSEL_QUOTE_FONT_SCALE_MAX}
+									step={CAROUSEL_QUOTE_FONT_SCALE_STEP}
+									bind:value={project.quote_font_scale}
+								/>
+								<span>x</span>
+							</div>
+						</div>
+						<small>ปรับขนาดชื่อ account, handle และข้อความคำคมใน Quote Mode ตอนนี้: {selectedQuoteFontScaleLabel}</small>
+					</label>
+				{/if}
+
 				<label>
 					<span>Visual direction</span>
 					<textarea bind:value={project.visual_direction} rows={4} placeholder="กำหนด mood, color, framing, text overlay direction"></textarea>
@@ -562,6 +740,74 @@
 					<span>Hashtags</span>
 					<textarea bind:value={hashtagsInput} rows={3} placeholder="#xauusd #biglot #tradingtips"></textarea>
 				</label>
+
+				{#if isQuoteMode}
+					<section class="account-panel">
+						<div class="panel-headline">
+							<div>
+								<p class="panel-kicker">Account header</p>
+								<h3>Quote identity</h3>
+							</div>
+							<span class="account-panel-note">Shown on every non-CTA slide</span>
+						</div>
+
+						<div class="account-card">
+							<div class="account-avatar">
+								{#if project.account_avatar_url}
+									<img src={project.account_avatar_url} alt={project.account_display_name?.trim() || 'Account avatar'} loading="lazy" />
+								{:else}
+									<span>{getAccountInitials(project.account_display_name)}</span>
+								{/if}
+							</div>
+
+							<div class="account-fields">
+								<label>
+									<span>Account display name</span>
+									<input bind:value={project.account_display_name} placeholder="BigLot Trader" />
+								</label>
+
+								<label>
+									<span>Account handle</span>
+									<input bind:value={project.account_handle} placeholder="biglot.ai" />
+									<small>
+										พิมพ์ได้ทั้งแบบมีหรือไม่มี `@` ระบบจะเก็บแบบไม่มี `@`
+										{#if formatAccountHandle(project.account_handle)}
+											Current: {formatAccountHandle(project.account_handle)}
+										{/if}
+									</small>
+								</label>
+
+								<label class="verified-toggle">
+									<input type="checkbox" bind:checked={project.account_is_verified} />
+									<span>Show verified badge</span>
+								</label>
+							</div>
+
+							<div class="account-actions">
+								<label class="account-upload-button" class:loading={updatingAccountAvatar}>
+									<input
+										type="file"
+										accept="image/jpeg,image/png,image/webp"
+										onchange={(event) => {
+											void uploadAccountAvatar(event);
+										}}
+										disabled={updatingAccountAvatar}
+									/>
+									<span>{updatingAccountAvatar ? 'Uploading...' : project.account_avatar_url ? 'Replace avatar' : 'Upload avatar'}</span>
+								</label>
+
+								<Button
+									variant="secondary"
+									size="sm"
+									onclick={removeAccountAvatar}
+									disabled={!project.account_avatar_url || removingAccountAvatar}
+								>
+									{removingAccountAvatar ? 'Removing...' : 'Remove avatar'}
+								</Button>
+							</div>
+						</div>
+					</section>
+				{/if}
 			</section>
 
 			<aside class="context-panel">
@@ -582,7 +828,11 @@
 				</div>
 				<div class="context-card">
 					<p class="context-label">Readiness</p>
-					<p>Ready จะเกิดเมื่อทุก slide มี copy ครบ และมี asset ที่ cache เข้า Storage แล้ว</p>
+					<p>
+						{isQuoteMode
+							? 'Quote projects ต้องมี account name + avatar, quote slides ต้องมี copy และ CTA slide ต้องมี asset ก่อน export'
+							: 'Ready จะเกิดเมื่อทุก slide มี copy ครบ และมี asset ที่ cache เข้า Storage แล้ว'}
+					</p>
 				</div>
 			</aside>
 		</div>
@@ -598,7 +848,11 @@
 			{#if slides.length === 0}
 				<div class="empty-card">
 					<h4>ยังไม่มี slide draft</h4>
-					<p>กด Generate Draft เพื่อให้ AI สร้างโครง carousel และค้น candidate asset จาก Pexels</p>
+					<p>
+						{isQuoteMode
+							? 'กด Generate Draft เพื่อให้ AI สร้าง quote-first storyboard แบบ 5 quote slides + 1 CTA'
+							: 'กด Generate Draft เพื่อให้ AI สร้างโครง carousel และค้น candidate asset จาก Pexels'}
+					</p>
 				</div>
 			{:else}
 				<div class="slide-list">
@@ -610,6 +864,12 @@
 									fontPreset={project.font_preset}
 									textLetterSpacingEm={project.text_letter_spacing_em}
 									fallbackAssetUrl={previewAssetForSlide(slide)}
+									contentMode={contentMode}
+									quoteFontScale={project.quote_font_scale}
+									accountDisplayName={project.account_display_name}
+									accountHandle={project.account_handle}
+									accountAvatarUrl={project.account_avatar_url}
+									accountIsVerified={project.account_is_verified}
 									exportId={slide.id}
 								/>
 							</div>
@@ -623,7 +883,7 @@
 											{#if slideReadiness(slide).isReady}
 												<span class="slide-state slide-state--ready">Ready</span>
 											{:else}
-												{#if !slideReadiness(slide).hasAsset}
+												{#if !isQuoteNonCtaSlide(slide) && !slideReadiness(slide).hasAsset}
 													<span class="slide-state slide-state--warn">Missing asset</span>
 												{/if}
 												{#if !slideReadiness(slide).hasCopy}
@@ -642,28 +902,37 @@
 									</Button>
 								</div>
 
-								<div class="field-grid">
+								<div class="field-grid" class:field-grid--headline-only={isQuoteNonCtaSlide(slide)}>
 									<label>
 										<span>Headline</span>
 										<textarea bind:value={slide.headline} rows={3} placeholder="ข้อความหลักบน slide"></textarea>
 									</label>
 
-									<label>
-										<span>Layout</span>
-										<select bind:value={slide.layout_variant}>
-											<option value="cover">cover</option>
-											<option value="content">content</option>
-											<option value="cta">cta</option>
-										</select>
-									</label>
+									{#if !isQuoteNonCtaSlide(slide)}
+										<label>
+											<span>Layout</span>
+											<select bind:value={slide.layout_variant}>
+												<option value="cover">cover</option>
+												<option value="content">content</option>
+												<option value="cta">cta</option>
+											</select>
+										</label>
+									{/if}
 								</div>
+
+								{#if isQuoteNonCtaSlide(slide)}
+									<div class="quote-mode-note">
+										<strong>Quote Mode</strong>
+										<span>สไลด์นี้จะใช้ headline เป็นข้อความหลักและไม่ต้องมี body copy, Pexels query, asset picker หรือ layout selector</span>
+									</div>
+								{/if}
 
 								{#if slide.role === 'cta'}
 									<label>
 										<span>CTA</span>
 										<textarea bind:value={slide.cta} rows={2} placeholder="ข้อความปิดท้าย"></textarea>
 									</label>
-								{:else}
+								{:else if !isQuoteNonCtaSlide(slide)}
 									<label>
 										<span>Body copy</span>
 										<textarea bind:value={slide.body} rows={4} placeholder="ข้อความเสริมของ slide"></textarea>
@@ -675,53 +944,55 @@
 									<textarea bind:value={slide.visual_brief} rows={3} placeholder="Mood, subject, composition, text overlay direction"></textarea>
 								</label>
 
-								<div class="field-grid field-grid--query">
-									<label>
-										<span>Pexels query</span>
-										<input bind:value={slide.freepik_query} placeholder="english pexels photo query" />
-									</label>
-									<Button
-										variant="ghost"
-										size="sm"
-										onclick={() => { void rerollAssets(slide); }}
-										loading={rerollingSlideId === slide.id}
-									>
-										Reroll Assets
-									</Button>
-								</div>
+								{#if !isQuoteNonCtaSlide(slide)}
+									<div class="field-grid field-grid--query">
+										<label>
+											<span>Pexels query</span>
+											<input bind:value={slide.freepik_query} placeholder="english pexels photo query" />
+										</label>
+										<Button
+											variant="ghost"
+											size="sm"
+											onclick={() => { void rerollAssets(slide); }}
+											loading={rerollingSlideId === slide.id}
+										>
+											Reroll Assets
+										</Button>
+									</div>
 
-								<div class="asset-grid">
-									{#if !slideReadiness(slide).hasAsset}
-										<div class="asset-warning">
-											<strong>ยังไม่ได้เลือก asset สำหรับ slide นี้</strong>
-											<span>กดเลือกรูปด้านล่าง หรือใช้ Auto-pick missing assets เพื่อเติมให้เร็วขึ้น</span>
-										</div>
-									{/if}
-									{#if slide.candidate_assets_json && slide.candidate_assets_json.length > 0}
-										{#each slide.candidate_assets_json as asset}
-											<button
-												type="button"
-												class="asset-card"
-												class:selected={slide.selected_asset_json?.id === asset.id}
-												onclick={() => { void selectAsset(slide, asset); }}
-												disabled={selectingAssetSlideId === slide.id}
-											>
-												{#if asset.preview_url}
-													<img src={asset.preview_url} alt={asset.title} loading="lazy" />
-												{/if}
-												<div class="asset-copy">
-													<strong>{asset.title}</strong>
-													<span>{asset.author_name ?? 'Pexels asset'}</span>
-												</div>
-											</button>
-										{/each}
-									{:else}
-										<div class="asset-empty">
-											<p>ยังไม่มี candidate assets</p>
-											<span>กด Reroll Assets หลังจากแก้ Pexels query</span>
-										</div>
-									{/if}
-								</div>
+									<div class="asset-grid">
+										{#if !slideReadiness(slide).hasAsset}
+											<div class="asset-warning">
+												<strong>ยังไม่ได้เลือก asset สำหรับ slide นี้</strong>
+												<span>กดเลือกรูปด้านล่าง หรือใช้ Auto-pick missing assets เพื่อเติมให้เร็วขึ้น</span>
+											</div>
+										{/if}
+										{#if slide.candidate_assets_json && slide.candidate_assets_json.length > 0}
+											{#each slide.candidate_assets_json as asset}
+												<button
+													type="button"
+													class="asset-card"
+													class:selected={slide.selected_asset_json?.id === asset.id}
+													onclick={() => { void selectAsset(slide, asset); }}
+													disabled={selectingAssetSlideId === slide.id}
+												>
+													{#if asset.preview_url}
+														<img src={asset.preview_url} alt={asset.title} loading="lazy" />
+													{/if}
+													<div class="asset-copy">
+														<strong>{asset.title}</strong>
+														<span>{asset.author_name ?? 'Pexels asset'}</span>
+													</div>
+												</button>
+											{/each}
+										{:else}
+											<div class="asset-empty">
+												<p>ยังไม่มี candidate assets</p>
+												<span>กด Reroll Assets หลังจากแก้ Pexels query</span>
+											</div>
+										{/if}
+									</div>
+								{/if}
 							</div>
 						</article>
 					{/each}
@@ -988,6 +1259,123 @@
 		line-height: 1.5;
 	}
 
+	.account-panel {
+		display: grid;
+		gap: var(--space-4);
+		padding: var(--space-4);
+		border-radius: 1.2rem;
+		background: linear-gradient(180deg, rgba(15, 23, 42, 0.03), rgba(15, 23, 42, 0.01));
+		border: 1px solid rgba(15, 23, 42, 0.08);
+	}
+
+	.account-panel-note {
+		font-size: 0.74rem;
+		line-height: 1.35;
+		color: var(--color-slate-500);
+	}
+
+	.account-card {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		gap: var(--space-4);
+		align-items: start;
+		padding: var(--space-4);
+		border-radius: 1rem;
+		background: #fff;
+		border: 1px solid var(--color-border);
+		box-shadow: var(--shadow-sm);
+	}
+
+	.account-avatar {
+		width: 4.5rem;
+		height: 4.5rem;
+		border-radius: 999px;
+		overflow: hidden;
+		display: grid;
+		place-items: center;
+		background: linear-gradient(135deg, rgba(29, 78, 216, 0.12), rgba(249, 115, 22, 0.14));
+		border: 1px solid rgba(29, 78, 216, 0.16);
+		color: var(--color-slate-900);
+		font-family: var(--font-heading);
+		font-size: 1.15rem;
+		font-weight: 800;
+	}
+
+	.account-avatar img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+
+	.account-fields {
+		display: grid;
+		gap: var(--space-3);
+	}
+
+	.account-fields small {
+		margin-top: -0.15rem;
+	}
+
+	.verified-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.55rem;
+		padding: 0.72rem 0.95rem;
+		border-radius: 0.95rem;
+		border: 1px solid var(--color-border-strong);
+		background: var(--color-bg-elevated);
+	}
+
+	.verified-toggle input {
+		width: 1rem;
+		height: 1rem;
+		margin: 0;
+		accent-color: var(--color-primary);
+	}
+
+	.verified-toggle span {
+		margin: 0;
+		font-size: 0.82rem;
+		font-weight: 700;
+		color: var(--color-slate-700);
+		text-transform: none;
+		letter-spacing: 0;
+	}
+
+	.account-actions {
+		display: grid;
+		gap: 0.6rem;
+		justify-items: start;
+		align-content: start;
+	}
+
+	.account-upload-button {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 0.72rem 1rem;
+		border-radius: 999px;
+		background: var(--color-slate-900);
+		border: 1px solid rgba(15, 23, 42, 0.1);
+		color: #fff;
+		font-size: 0.82rem;
+		font-weight: 800;
+		cursor: pointer;
+	}
+
+	.account-upload-button input {
+		position: absolute;
+		inset: 0;
+		opacity: 0;
+		cursor: pointer;
+	}
+
+	.account-upload-button.loading {
+		opacity: 0.72;
+		cursor: wait;
+	}
+
 	.letter-spacing-field {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto;
@@ -1092,6 +1480,35 @@
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) 180px;
 		gap: var(--space-3);
+	}
+
+	.field-grid--headline-only {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.quote-mode-note {
+		display: grid;
+		gap: 0.2rem;
+		padding: 0.85rem 1rem;
+		border-radius: 0.95rem;
+		background: rgba(15, 23, 42, 0.04);
+		border: 1px solid rgba(15, 23, 42, 0.08);
+	}
+
+	.quote-mode-note strong,
+	.quote-mode-note span {
+		margin: 0;
+	}
+
+	.quote-mode-note strong {
+		font-size: 0.82rem;
+		color: var(--color-slate-900);
+	}
+
+	.quote-mode-note span {
+		font-size: 0.75rem;
+		line-height: 1.5;
+		color: var(--color-slate-600);
 	}
 
 	.field-grid--query {
@@ -1211,6 +1628,14 @@
 	}
 
 	@media (max-width: 720px) {
+		.account-card {
+			grid-template-columns: 1fr;
+		}
+
+		.account-actions {
+			grid-template-columns: 1fr;
+		}
+
 		.field-grid,
 		.field-grid--query,
 		.letter-spacing-field {

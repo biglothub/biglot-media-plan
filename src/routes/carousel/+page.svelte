@@ -8,15 +8,34 @@
 	import type {
 		AIIdeaSuggestion,
 		BacklogContentCategory,
+		CarouselContentMode,
 		CarouselProjectRow,
 		ContentJourneyStage
 	} from '$lib/types';
+
+	const PROJECT_MODE_OPTIONS: Array<{
+		value: CarouselContentMode;
+		label: string;
+		description: string;
+	}> = [
+		{
+			value: 'standard',
+			label: 'Standard',
+			description: 'ใช้ workflow เดิมสำหรับ carousel แบบ knowledge / trading content'
+		},
+		{
+			value: 'quote',
+			label: 'Quote Mode',
+			description: 'ใช้ layout แบบ quote-first พร้อม account header สำหรับสไลด์ที่ไม่ใช่ CTA'
+		}
+	];
 
 	let projects = $state<CarouselProjectRow[]>([]);
 	let loadingProjects = $state(false);
 	let search = $state('');
 	let creatingStandalone = $state(false);
 	let deletingProjectId = $state<string | null>(null);
+	let contentMode = $state<CarouselContentMode>('standard');
 	let newIdeaTitle = $state('');
 	let newIdeaDescription = $state('');
 	let newIdeaNotes = $state('');
@@ -63,6 +82,63 @@
 
 	const carouselCategoryOptions = CONTENT_CATEGORY_OPTIONS.filter((option) => option.value !== 'pin');
 	const activeAiPresetPrompt = $derived(AI_IDEA_FOCUS_PRESETS.find((preset) => preset.id === activeAiPreset)?.prompt ?? '');
+	const heroHeadline = $derived(
+		contentMode === 'quote'
+			? 'Quote-first brief, then Studio'
+			: 'AI draft, Pexels asset search, แล้วค่อย export เป็น package พร้อมโพสต์'
+	);
+	const heroBody = $derived(
+		contentMode === 'quote'
+			? 'หน้านี้เป็น entry point สำหรับ Carousel Studio โดยตรง สร้าง quote-first project ได้เลยแล้วค่อยเข้า studio ไปจัดการ draft, avatar, copy และ export ต่อใน workflow ของ carousel เอง'
+			: 'หน้านี้เป็น entry point สำหรับ Carousel Studio โดยตรง สร้าง project ใหม่ได้เลยแล้วค่อยเข้า studio ไปจัดการ draft, asset และ export ต่อใน workflow ของ carousel เอง'
+	);
+	const studioSubtitle = $derived(
+		contentMode === 'quote'
+			? 'สร้าง quote-first carousel project พร้อม account header, avatar workflow และ export package'
+			: 'สร้าง Instagram carousel project พร้อม asset, caption และ export package'
+	);
+	const panelCopy = $derived(
+		contentMode === 'quote'
+			? 'โหมดนี้เหมาะกับ carousel ที่ใช้ข้อความนำภาพ แสดง account header ทุกสไลด์ที่ไม่ใช่ CTA และให้ AI ช่วยคิด quote-led brief ก่อนเข้า Studio'
+			: 'ให้ AI ช่วยตั้งต้นไอเดียที่เกี่ยวกับการเทรด แล้วค่อยแตกต่อเป็น carousel brief ก่อนเข้า Studio'
+	);
+	const aiAssistTitle = $derived(contentMode === 'quote' ? 'Quote-led Carousel Assist' : 'Trading AI Assist');
+	const aiAssistDescription = $derived(
+		contentMode === 'quote'
+			? 'กดครั้งเดียวแล้วได้ idea แบบ quote-first ที่พร้อมแตกเป็น 5 quote slides + 1 CTA สำหรับเข้า Studio'
+			: 'กดครั้งเดียวแล้วได้ idea แบบ carousel-ready'
+	);
+	const aiAssistBodyCopy = $derived(
+		contentMode === 'quote'
+			? 'ระบบจะคิดหัวข้อให้พร้อม hook, audience, quote flow และ CTA ที่เหมาะกับ quote carousel / community funnel'
+			: 'ระบบจะคิดหัวข้อให้พร้อม hook, audience, slide flow และ CTA ที่เหมาะกับ XAUUSD / IB funnel'
+	);
+	const aiPromptPlaceholder = $derived(
+		contentMode === 'quote'
+			? 'เช่น อยากได้ quote carousel สำหรับคนที่กำลังกลัวเข้าออเดอร์ตอนทองวิ่งแรง'
+			: 'เช่น อยากได้ content สำหรับมือใหม่ที่ชอบ overtrade ตอนทองวิ่งแรง'
+	);
+	const titlePlaceholder = $derived(
+		contentMode === 'quote'
+			? 'เช่น 5 quote ที่พูดแทน mindset ของคนเทรดทอง'
+			: 'เช่น 5 ความผิดพลาดเวลาเข้าเทรดทอง'
+	);
+	const descriptionPlaceholder = $derived(
+		contentMode === 'quote'
+			? 'สรุปธีมคำคม มุมมอง และอารมณ์หลักของ quote carousel แบบสั้นๆ'
+			: 'สรุป angle ของ carousel แบบสั้นๆ'
+	);
+	const studioBriefPlaceholder = $derived(
+		contentMode === 'quote'
+			? 'ใส่ quote mood, audience, slide flow, CTA หรือใช้ AI ช่วยเติมให้'
+			: 'ใส่ hook, audience, slide flow, CTA หรือใช้ AI ช่วยเติมให้'
+	);
+	const createButtonLabel = $derived(contentMode === 'quote' ? 'Create Quote Project' : 'Create Carousel Project');
+	const modeSelectorHint = $derived(
+		contentMode === 'quote'
+			? 'Quote Mode จะสร้าง project แบบ text-first และไม่เปลี่ยน workflow ของ standard project เดิม'
+			: 'Standard mode จะใช้ workflow เดิมสำหรับ carousel ที่มี asset-led slides'
+	);
 
 	const filteredProjects = $derived.by(() => {
 		const query = search.trim().toLowerCase();
@@ -72,11 +148,13 @@
 			const caption = (project.caption ?? '').toLowerCase();
 			const visualDirection = (project.visual_direction ?? '').toLowerCase();
 			const status = project.status.toLowerCase();
+			const mode = (project.content_mode ?? 'standard').toLowerCase();
 			return (
 				projectTitle.includes(query) ||
 				caption.includes(query) ||
 				visualDirection.includes(query) ||
-				status.includes(query)
+				status.includes(query) ||
+				mode.includes(query)
 			);
 		});
 	});
@@ -111,9 +189,19 @@
 		});
 	}
 
+	function setContentMode(mode: CarouselContentMode) {
+		if (contentMode === mode) return;
+		contentMode = mode;
+		aiSuggestError = '';
+		aiSuggestions = [];
+	}
+
 	function buildSuggestionNotes(suggestion: AIIdeaSuggestion): string {
 		const lines = [
-			'AI Carousel Brief',
+			contentMode === 'quote' ? 'AI Quote Carousel Brief' : 'AI Carousel Brief',
+			contentMode === 'quote'
+				? 'Mode: quote-first carousel with account header on every non-CTA slide'
+				: null,
 			suggestion.audience ? `Audience: ${suggestion.audience}` : null,
 			suggestion.journey_stage ? `Journey stage: ${journeyStageLabel[suggestion.journey_stage]}` : null,
 			suggestion.hook ? `Hook: ${suggestion.hook}` : null,
@@ -149,18 +237,22 @@
 
 		try {
 			const prompt = [activeAiPresetPrompt, aiCustomPrompt.trim()].filter(Boolean).join('\n');
+			const requestBody: Record<string, unknown> = {
+				useCase: 'carousel_studio',
+				prompt: prompt || undefined,
+				count: 4
+			};
+			if (contentMode === 'quote') {
+				requestBody.content_mode = 'quote';
+			}
 			const response = await fetch('/api/openclaw/ai/suggest-ideas', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					useCase: 'carousel_studio',
-					prompt: prompt || undefined,
-					count: 4
-				})
+				body: JSON.stringify(requestBody)
 			});
 			const body = await response.json();
 			if (!response.ok) {
-				aiSuggestError = body.error ?? 'สร้าง trading ideas ไม่สำเร็จ';
+				aiSuggestError = body.error ?? 'สร้าง AI ideas ไม่สำเร็จ';
 				return;
 			}
 
@@ -208,6 +300,7 @@
 					title,
 					description: newIdeaDescription.trim() || null,
 					content_category: newIdeaCategory || null,
+					content_mode: contentMode,
 					notes: ['Created from Carousel Studio', newIdeaNotes.trim()].filter(Boolean).join('\n\n')
 				})
 			});
@@ -271,7 +364,7 @@
 	<PageHeader
 		eyebrow="Instagram automation"
 		title="Carousel Studio"
-		subtitle="สร้าง Instagram carousel project พร้อม asset, caption และ export package"
+		subtitle={studioSubtitle}
 	>
 		{#snippet actions()}
 			<Button variant="secondary" onclick={() => { void loadProjects(); }} loading={loadingProjects}>
@@ -286,11 +379,8 @@
 		<section class="hero">
 			<div class="hero-copy">
 				<p class="hero-kicker">Instagram-first workflow</p>
-				<h2>AI draft, Pexels asset search, แล้วค่อย export เป็น package พร้อมโพสต์</h2>
-				<p>
-					หน้านี้เป็น entry point สำหรับ <strong>Carousel Studio</strong> โดยตรง สร้าง project ใหม่ได้เลยแล้วค่อยเข้า
-					studio ไปจัดการ draft, asset และ export ต่อใน workflow ของ carousel เอง
-				</p>
+				<h2>{heroHeadline}</h2>
+				<p>{heroBody}</p>
 			</div>
 
 			<div class="hero-stats">
@@ -339,6 +429,7 @@
 								<div class="project-top">
 									<Badge variant={badgeVariant(project.status)} label={carouselStatusLabel[project.status]} />
 									<Badge variant="platform" value="instagram" />
+									<Badge variant="neutral" label={project.content_mode === 'quote' ? 'Quote Mode' : 'Standard Mode'} />
 								</div>
 								<h4>{project.title ?? 'Untitled carousel'}</h4>
 								<p class="project-caption">{project.caption ?? project.visual_direction ?? 'ยังไม่มี caption หรือ visual direction'}</p>
@@ -364,21 +455,43 @@
 			</section>
 
 			<aside class="ideas-panel">
-				<div class="panel-head">
-					<div>
-						<p class="panel-kicker">Studio entry point</p>
-						<h3>Create idea here</h3>
-						<p class="panel-copy">ให้ AI ช่วยตั้งต้นไอเดียที่เกี่ยวกับการเทรด แล้วค่อยแตกต่อเป็น carousel brief ก่อนเข้า Studio</p>
+					<div class="panel-head">
+						<div>
+							<p class="panel-kicker">Studio entry point</p>
+							<h3>Create idea here</h3>
+							<p class="panel-copy">{panelCopy}</p>
+						</div>
 					</div>
-				</div>
 
 				<div class="create-card">
+					<label class="mode-selector">
+						<span>Project mode</span>
+						<div class="mode-row">
+							{#each PROJECT_MODE_OPTIONS as option}
+								<button
+									type="button"
+									class:selected={contentMode === option.value}
+									onclick={() => {
+										setContentMode(option.value);
+									}}
+								>
+									<strong>{option.label}</strong>
+									<small>{option.description}</small>
+								</button>
+							{/each}
+						</div>
+						<small>{modeSelectorHint}</small>
+					</label>
+
 					<section class="ai-assist">
 						<div class="ai-assist-head">
 							<div class="ai-assist-copy">
-								<p class="create-kicker">Trading AI Assist</p>
-								<h4>กดครั้งเดียวแล้วได้ idea แบบ carousel-ready</h4>
-								<p>ระบบจะคิดหัวข้อให้พร้อม hook, audience, slide flow และ CTA ที่เหมาะกับ XAUUSD / IB funnel</p>
+								<p class="create-kicker" class:create-kicker--quote={contentMode === 'quote'}>
+									{contentMode === 'quote' ? 'Quote-led AI Assist' : 'Trading AI Assist'}
+								</p>
+								<h4>{aiAssistTitle}</h4>
+								<p>{aiAssistDescription}</p>
+								<p class="ai-assist-body">{aiAssistBodyCopy}</p>
 							</div>
 
 							<Button
@@ -387,7 +500,7 @@
 								onclick={() => { void suggestTradingIdeas(); }}
 								loading={aiSuggestLoading}
 							>
-								{aiSuggestLoading ? 'กำลังคิด...' : 'AI คิดให้'}
+								{aiSuggestLoading ? 'กำลังคิด...' : contentMode === 'quote' ? 'AI คิด quote ให้' : 'AI คิดให้'}
 							</Button>
 						</div>
 
@@ -410,7 +523,7 @@
 							<textarea
 								bind:value={aiCustomPrompt}
 								rows={3}
-								placeholder="เช่น อยากได้ content สำหรับมือใหม่ที่ชอบ overtrade ตอนทองวิ่งแรง"
+								placeholder={aiPromptPlaceholder}
 							></textarea>
 						</label>
 
@@ -483,13 +596,13 @@
 						<input
 							id="carousel-idea-title"
 							bind:value={newIdeaTitle}
-							placeholder="เช่น 5 ความผิดพลาดเวลาเข้าเทรดทอง"
+							placeholder={titlePlaceholder}
 						/>
 					</label>
 
 					<label>
 						<span>Description</span>
-						<textarea bind:value={newIdeaDescription} rows={4} placeholder="สรุป angle ของ carousel แบบสั้นๆ"></textarea>
+						<textarea bind:value={newIdeaDescription} rows={4} placeholder={descriptionPlaceholder}></textarea>
 					</label>
 
 					<label>
@@ -506,14 +619,14 @@
 						<textarea
 							bind:value={newIdeaNotes}
 							rows={7}
-							placeholder="ใส่ hook, audience, slide flow, CTA หรือใช้ AI ช่วยเติมให้"
+							placeholder={studioBriefPlaceholder}
 						></textarea>
 						<small>brief นี้จะถูกเก็บใน backlog notes และส่งต่อให้ AI ตอน generate carousel</small>
 					</label>
 
 					<div class="create-actions">
 						<Button variant="primary" onclick={() => { void createStandaloneProject(); }} loading={creatingStandalone}>
-							{creatingStandalone ? 'Creating...' : 'Create Carousel Project'}
+							{creatingStandalone ? 'Creating...' : createButtonLabel}
 						</Button>
 						<Button variant="ghost" onclick={resetIdeaDraft}>Clear</Button>
 					</div>
@@ -643,6 +756,77 @@
 			linear-gradient(180deg, rgba(238, 242, 255, 0.88), rgba(255, 255, 255, 0.96));
 	}
 
+	.mode-selector {
+		display: grid;
+		gap: 0.45rem;
+		padding: 0.95rem;
+		border-radius: 1rem;
+		background: rgba(255, 255, 255, 0.84);
+		border: 1px solid rgba(148, 163, 184, 0.2);
+	}
+
+	.mode-selector > span,
+	.mode-selector > small {
+		font-size: 0.76rem;
+		font-weight: 800;
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+		color: var(--color-slate-500);
+	}
+
+	.mode-selector > small {
+		font-weight: 600;
+		text-transform: none;
+		letter-spacing: 0;
+		line-height: 1.5;
+	}
+
+	.mode-row {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.5rem;
+	}
+
+	.mode-row button {
+		display: grid;
+		gap: 0.25rem;
+		align-content: start;
+		text-align: left;
+		padding: 0.8rem 0.85rem;
+		border-radius: 0.95rem;
+		border: 1px solid rgba(148, 163, 184, 0.24);
+		background: #fff;
+		color: var(--color-slate-700);
+		font: inherit;
+		cursor: pointer;
+		transition:
+			background var(--transition-fast),
+			border-color var(--transition-fast),
+			color var(--transition-fast),
+			transform var(--transition-fast);
+	}
+
+	.mode-row button strong {
+		font-size: 0.88rem;
+		line-height: 1.2;
+	}
+
+	.mode-row button small {
+		display: block;
+		font-size: 0.72rem;
+		font-weight: 500;
+		line-height: 1.45;
+		color: var(--color-slate-500);
+	}
+
+	.mode-row button:hover,
+	.mode-row button.selected {
+		background: rgba(29, 78, 216, 0.08);
+		border-color: rgba(29, 78, 216, 0.24);
+		color: var(--color-blue-700);
+		transform: translateY(-1px);
+	}
+
 	.panel-head {
 		display: grid;
 		gap: var(--space-3);
@@ -722,6 +906,10 @@
 		color: var(--color-orange-600);
 	}
 
+	.create-kicker--quote {
+		color: #be123c;
+	}
+
 	.ai-assist-copy h4,
 	.ai-suggestion-card h4 {
 		margin: 0;
@@ -732,6 +920,11 @@
 		margin: 0;
 		color: var(--color-slate-600);
 		line-height: 1.6;
+	}
+
+	.ai-assist-body {
+		font-size: 0.84rem;
+		color: var(--color-slate-500);
 	}
 
 	:global(.ai-trigger) {

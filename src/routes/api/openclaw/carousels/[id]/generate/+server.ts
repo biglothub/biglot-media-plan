@@ -1,10 +1,14 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabase';
-import type { CarouselAsset } from '$lib/types';
+import type { CarouselAsset, CarouselContentMode } from '$lib/types';
 import { generateCarouselDraft } from '$lib/server/carousel-ai';
 import { downloadAndStorePexelsAsset, searchPexelsResources, hasPexelsConfig } from '$lib/server/pexels';
 import { getCarouselBundle, getCarouselProjectById, recomputeCarouselStatus } from '$lib/server/carousel-store';
+
+function resolveContentMode(value: unknown): CarouselContentMode {
+	return value === 'quote' ? 'quote' : 'standard';
+}
 
 export const POST: RequestHandler = async ({ params }) => {
 	if (!supabase) return json({ error: 'Supabase not configured' }, { status: 500 });
@@ -15,6 +19,7 @@ export const POST: RequestHandler = async ({ params }) => {
 		if (!project) {
 			return json({ error: 'Carousel project not found' }, { status: 404 });
 		}
+		const contentMode = resolveContentMode(project.content_mode);
 
 		const idea = project.idea_backlog;
 		if (!idea || (!idea.title?.trim() && !idea.description?.trim())) {
@@ -26,14 +31,24 @@ export const POST: RequestHandler = async ({ params }) => {
 			description: idea.description,
 			notes: idea.notes,
 			contentCategory: idea.content_category,
-			slideCount: 6
+			slideCount: 6,
+			contentMode
 		});
 
 		const slides = await Promise.all(
 			draft.slides.map(async (slide) => {
+				if (contentMode === 'quote' && slide.role !== 'cta') {
+					return {
+						...slide,
+						candidate_assets_json: [],
+						selected_asset_json: null,
+						selected_asset_storage_path: null
+					};
+				}
+
 				let candidateAssets: CarouselAsset[] = [];
 				try {
-					candidateAssets = await searchPexelsResources(slide.freepik_query, 8);
+					candidateAssets = await searchPexelsResources(slide.freepik_query ?? '', 8);
 				} catch {
 					candidateAssets = [];
 				}

@@ -4,6 +4,7 @@ export type BacklogContentCategory = 'hero' | 'help' | 'hub' | 'pin';
 export type ContentJourneyStage = 'awareness' | 'trust' | 'conversion';
 export type SuggestIdeasUseCase = 'backlog' | 'carousel_studio';
 export type CarouselProjectStatus = 'draft' | 'ready' | 'exported' | 'archived';
+export type CarouselContentMode = 'standard' | 'quote';
 export type CarouselSlideRole = 'cover' | 'body' | 'cta';
 export type CarouselLayoutVariant = 'cover' | 'content' | 'cta';
 export type CarouselFontPreset =
@@ -162,12 +163,19 @@ export interface CarouselProjectRow {
 	backlog_id: string;
 	platform: 'instagram';
 	status: CarouselProjectStatus;
+	content_mode: CarouselContentMode;
 	font_preset: CarouselFontPreset;
 	text_letter_spacing_em: number;
+	quote_font_scale: number;
 	title: string | null;
 	visual_direction: string | null;
 	caption: string | null;
 	hashtags_json: string[] | null;
+	account_display_name: string | null;
+	account_handle: string | null;
+	account_avatar_url: string | null;
+	account_avatar_storage_path: string | null;
+	account_is_verified: boolean;
 	slide_count: number;
 	last_generated_at: string | null;
 	last_exported_at: string | null;

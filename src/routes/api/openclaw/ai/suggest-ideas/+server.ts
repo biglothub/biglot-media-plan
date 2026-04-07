@@ -3,7 +3,13 @@ import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabase';
 import { chat } from '$lib/server/minimax';
 import { CREATOR_SYSTEM_PROMPT } from '$lib/server/skills/creator';
-import type { AIIdeaSuggestion, ContentJourneyStage, SuggestIdeasUseCase, SupportedPlatform } from '$lib/types';
+import type {
+	AIIdeaSuggestion,
+	CarouselContentMode,
+	ContentJourneyStage,
+	SuggestIdeasUseCase,
+	SupportedPlatform
+} from '$lib/types';
 
 const SUPPORTED_PLATFORMS = ['youtube', 'facebook', 'instagram', 'tiktok'] as const satisfies readonly SupportedPlatform[];
 const SUPPORTED_CATEGORIES = ['hero', 'hub', 'help'] as const;
@@ -14,6 +20,7 @@ type SuggestIdeasRequest = {
 	prompt?: string;
 	useCase?: SuggestIdeasUseCase;
 	count?: number;
+	contentMode?: CarouselContentMode;
 };
 
 function cleanJsonResponse(raw: string): string {
@@ -32,7 +39,8 @@ function normalizeRequestBody(value: unknown): SuggestIdeasRequest {
 	return {
 		prompt: asTrimmedString(body.prompt) ?? undefined,
 		useCase: body.useCase === 'carousel_studio' ? 'carousel_studio' : body.useCase === 'backlog' ? 'backlog' : undefined,
-		count: typeof body.count === 'number' && Number.isFinite(body.count) ? body.count : undefined
+		count: typeof body.count === 'number' && Number.isFinite(body.count) ? body.count : undefined,
+		contentMode: body.content_mode === 'quote' ? 'quote' : 'standard'
 	};
 }
 
@@ -113,12 +121,24 @@ function buildSuggestionPrompt(input: {
 	backlogSummary: string;
 	categoryNote: string;
 	useCase: SuggestIdeasUseCase;
+	contentMode: CarouselContentMode;
 	prompt?: string;
 	count: number;
 }): string {
 	const customPromptBlock = input.prompt?.trim() ? `\nโจทย์เพิ่มเติมจากทีม:\n${input.prompt.trim()}\n` : '';
 
 	if (input.useCase === 'carousel_studio') {
+		const isQuoteMode = input.contentMode === 'quote';
+		const extraModeBlock = isQuoteMode
+			? `
+Quote mode guidance:
+- สร้างไอเดียที่ออกแบบมาเพื่อ carousel แบบ quote-led
+- title ควรสั้น คม และทำงานเป็น quote hook ได้
+- description ควรอธิบาย angle, emotion, และ voice ของ quote carousel
+- slide_outline ต้องนึกเป็น flow ของ quote slides 5 หน้า + CTA ปิดท้าย
+- อย่าเขียนเหมือน knowledge carousel แบบอธิบายยาว`
+			: '';
+
 		return `Idea backlog ที่มีอยู่แล้ว (อย่าซ้ำ):
 ${input.backlogSummary}
 
@@ -126,7 +146,7 @@ ${input.categoryNote}
 
 กำลังออกแบบไอเดียสำหรับหน้า Create idea here ของ Carousel Studio
 
-สร้าง Instagram carousel ideas ใหม่ ${input.count} รายการ ที่เกี่ยวข้องกับการเทรด XAUUSD, forex trading psychology, risk management, macro news ที่กระทบทอง หรือ IB business ของ BigLot โดยตรง
+สร้าง Instagram carousel ideas ใหม่ ${input.count} รายการ ที่เกี่ยวข้องกับการเทรด XAUUSD, forex trading psychology, risk management, macro news ที่กระทบทอง หรือ IB business ของ BigLot โดยตรง${isQuoteMode ? ' ในรูปแบบ quote-led carousel' : ''}
 
 เกณฑ์สำคัญ:
 - ทุกข้อเป็น platform "instagram"
@@ -142,6 +162,7 @@ ${input.categoryNote}
 - reason = อธิบายว่าทำไม idea นี้เหมาะกับ funnel และมีโอกาส perform
 - ให้ mix ทั้งมุมให้ความรู้, emotional pain point และ community conversion
 - หลีกเลี่ยงหัวข้อกว้างเกินไป เช่น "สอนเทรดทองเบื้องต้น" โดยไม่มีมุมเฉพาะ
+${extraModeBlock}
 ${customPromptBlock}
 ตอบเป็น JSON array format นี้:
 [
@@ -208,6 +229,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	const useCase = payload.useCase === 'carousel_studio' ? 'carousel_studio' : 'backlog';
+	const contentMode = useCase === 'carousel_studio' ? payload.contentMode ?? 'standard' : 'standard';
 	const count = clampSuggestionCount(payload.count, useCase);
 
 	const { data: backlog, error } = await supabase
@@ -245,6 +267,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		backlogSummary,
 		categoryNote,
 		useCase,
+		contentMode,
 		prompt: payload.prompt,
 		count
 	});

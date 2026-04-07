@@ -6,6 +6,8 @@ import { supabaseAdmin, hasSupabaseServiceRoleConfig } from '$lib/server/supabas
 const PEXELS_API_BASE_URL = 'https://api.pexels.com/v1';
 const PEXELS_TIMEOUT_MS = 60_000;
 const CAROUSEL_ASSET_BUCKET = 'carousel-assets';
+const MAX_CAROUSEL_ACCOUNT_AVATAR_BYTES = 5 * 1024 * 1024;
+const SUPPORTED_CAROUSEL_ACCOUNT_AVATAR_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 type JsonRecord = Record<string, unknown>;
 
@@ -154,6 +156,30 @@ function contentTypeToExtension(contentType: string | null, url: string): string
 	return extensionFromUrl(url) ?? 'jpg';
 }
 
+function contentTypeToAccountAvatarExtension(contentType: string): string {
+	if (contentType === 'image/png') return 'png';
+	if (contentType === 'image/webp') return 'webp';
+	return 'jpg';
+}
+
+function isSupportedAccountAvatarType(type: string): boolean {
+	return SUPPORTED_CAROUSEL_ACCOUNT_AVATAR_TYPES.has(type);
+}
+
+async function removeStoredCarouselAsset(storagePath: string | null | undefined): Promise<void> {
+	if (!storagePath) {
+		return;
+	}
+	if (!hasSupabaseServiceRoleConfig || !supabaseAdmin) {
+		throw new Error('SUPABASE_SERVICE_ROLE_KEY is required for avatar cleanup');
+	}
+
+	const { error } = await supabaseAdmin.storage.from(CAROUSEL_ASSET_BUCKET).remove([storagePath]);
+	if (error) {
+		throw new Error(`Supabase storage delete failed: ${error.message}`);
+	}
+}
+
 async function fetchBinary(url: string): Promise<{ buffer: ArrayBuffer; contentType: string | null }> {
 	const response = await fetch(url);
 	if (!response.ok) {
@@ -206,4 +232,45 @@ export async function downloadAndStorePexelsAsset(
 			storage_url: publicUrl
 		}
 	};
+}
+
+export async function uploadCarouselAccountAvatar(
+	file: File,
+	projectId: string
+): Promise<{ path: string; publicUrl: string }> {
+	if (!hasSupabaseServiceRoleConfig || !supabaseAdmin) {
+		throw new Error('SUPABASE_SERVICE_ROLE_KEY is required for avatar uploads');
+	}
+
+	if (!isSupportedAccountAvatarType(file.type)) {
+		throw new Error('รองรับเฉพาะไฟล์ภาพ JPG, PNG หรือ WEBP');
+	}
+	if (file.size <= 0) {
+		throw new Error('ไฟล์ภาพว่างเปล่า');
+	}
+	if (file.size > MAX_CAROUSEL_ACCOUNT_AVATAR_BYTES) {
+		throw new Error('ไฟล์ภาพใหญ่เกิน 5MB');
+	}
+
+	const extension = contentTypeToAccountAvatarExtension(file.type);
+	const filePath = `projects/${projectId}/account/avatar-${randomUUID()}.${extension}`;
+	const buffer = await file.arrayBuffer();
+	const { error: uploadError } = await supabaseAdmin.storage.from(CAROUSEL_ASSET_BUCKET).upload(filePath, buffer, {
+		contentType: file.type,
+		upsert: false
+	});
+
+	if (uploadError) {
+		throw new Error(`Supabase storage upload failed: ${uploadError.message}`);
+	}
+
+	const { data: publicData } = supabaseAdmin.storage.from(CAROUSEL_ASSET_BUCKET).getPublicUrl(filePath);
+	return {
+		path: filePath,
+		publicUrl: publicData.publicUrl
+	};
+}
+
+export async function deleteCarouselStoredAsset(storagePath: string | null | undefined): Promise<void> {
+	await removeStoredCarouselAsset(storagePath);
 }
