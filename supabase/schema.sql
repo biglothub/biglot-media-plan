@@ -331,6 +331,12 @@ CREATE TABLE IF NOT EXISTS public.carousel_slides (
   cta                         text,
   visual_brief                text,
   freepik_query               text,
+  quote_font_scale_override   numeric(4, 2)
+    CHECK (quote_font_scale_override IS NULL OR (quote_font_scale_override >= 0.55 AND quote_font_scale_override <= 1.8)),
+  quote_text_offset_x_px      integer NOT NULL DEFAULT 0
+    CHECK (quote_text_offset_x_px >= -180 AND quote_text_offset_x_px <= 180),
+  quote_text_offset_y_px      integer NOT NULL DEFAULT 0
+    CHECK (quote_text_offset_y_px >= -180 AND quote_text_offset_y_px <= 180),
   candidate_assets_json       jsonb NOT NULL DEFAULT '[]'::jsonb,
   selected_asset_json         jsonb,
   selected_asset_storage_path text,
@@ -349,3 +355,30 @@ CREATE POLICY public_read_carousel_slides   ON public.carousel_slides FOR SELECT
 CREATE POLICY public_insert_carousel_slides ON public.carousel_slides FOR INSERT TO public WITH CHECK (true);
 CREATE POLICY public_update_carousel_slides ON public.carousel_slides FOR UPDATE TO public USING (true) WITH CHECK (true);
 CREATE POLICY public_delete_carousel_slides ON public.carousel_slides FOR DELETE TO public USING (true);
+
+-- 11. carousel_quote_identities
+CREATE TABLE IF NOT EXISTS public.carousel_quote_identities (
+  id                          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                        text NOT NULL,
+  account_display_name        text NOT NULL,
+  account_handle              text,
+  account_avatar_url          text,
+  account_avatar_storage_path text,
+  account_is_verified         boolean NOT NULL DEFAULT false,
+  created_at                  timestamptz NOT NULL DEFAULT now(),
+  updated_at                  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_carousel_quote_identities_updated_at
+  ON public.carousel_quote_identities (updated_at DESC);
+
+ALTER TABLE public.carousel_quote_identities ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY public_read_carousel_quote_identities
+  ON public.carousel_quote_identities FOR SELECT TO public USING (true);
+CREATE POLICY public_insert_carousel_quote_identities
+  ON public.carousel_quote_identities FOR INSERT TO public WITH CHECK (true);
+CREATE POLICY public_update_carousel_quote_identities
+  ON public.carousel_quote_identities FOR UPDATE TO public USING (true) WITH CHECK (true);
+CREATE POLICY public_delete_carousel_quote_identities
+  ON public.carousel_quote_identities FOR DELETE TO public USING (true);

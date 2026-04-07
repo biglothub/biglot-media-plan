@@ -1,6 +1,7 @@
 import {
 	deriveCarouselProjectStatus,
 	normalizeCarouselQuoteFontScale,
+	normalizeCarouselQuoteTextOffsetPx,
 	normalizeCarouselTextLetterSpacingEm,
 	normalizeHashtags
 } from '$lib/carousel';
@@ -71,6 +72,12 @@ function normalizeCarouselSlide(row: JsonRecord): CarouselSlideRow {
 		cta: typeof row.cta === 'string' ? row.cta : null,
 		visual_brief: typeof row.visual_brief === 'string' ? row.visual_brief : null,
 		freepik_query: typeof row.freepik_query === 'string' ? row.freepik_query : null,
+		quote_font_scale_override:
+			row.quote_font_scale_override === null || row.quote_font_scale_override === undefined
+				? null
+				: normalizeCarouselQuoteFontScale(row.quote_font_scale_override),
+		quote_text_offset_x_px: normalizeCarouselQuoteTextOffsetPx(row.quote_text_offset_x_px),
+		quote_text_offset_y_px: normalizeCarouselQuoteTextOffsetPx(row.quote_text_offset_y_px),
 		candidate_assets_json: normalizeCarouselAssetList(row.candidate_assets_json),
 		selected_asset_json:
 			row.selected_asset_json && typeof row.selected_asset_json === 'object'

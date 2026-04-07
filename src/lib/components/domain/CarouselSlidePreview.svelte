@@ -1,10 +1,12 @@
 <script lang="ts">
 	import {
 		DEFAULT_CAROUSEL_QUOTE_FONT_SCALE,
+		DEFAULT_CAROUSEL_QUOTE_TEXT_OFFSET_PX,
 		DEFAULT_CAROUSEL_TEXT_LETTER_SPACING_EM,
 		getCarouselFontPresetDefinition,
 		getCarouselSelectedAssetUrl,
 		normalizeCarouselQuoteFontScale,
+		normalizeCarouselQuoteTextOffsetPx,
 		normalizeCarouselTextLetterSpacingEm
 	} from '$lib/carousel';
 	import type { CarouselContentMode, CarouselFontPreset, CarouselSlideRow } from '$lib/types';
@@ -17,6 +19,8 @@
 		exportId?: string | null;
 		contentMode?: CarouselContentMode;
 		quoteFontScale?: number;
+		quoteTextOffsetXPx?: number;
+		quoteTextOffsetYPx?: number;
 		accountDisplayName?: string | null;
 		accountHandle?: string | null;
 		accountAvatarUrl?: string | null;
@@ -31,6 +35,8 @@
 		exportId = undefined,
 		contentMode = 'standard',
 		quoteFontScale = DEFAULT_CAROUSEL_QUOTE_FONT_SCALE,
+		quoteTextOffsetXPx = DEFAULT_CAROUSEL_QUOTE_TEXT_OFFSET_PX,
+		quoteTextOffsetYPx = DEFAULT_CAROUSEL_QUOTE_TEXT_OFFSET_PX,
 		accountDisplayName = '',
 		accountHandle = '',
 		accountAvatarUrl = null,
@@ -43,6 +49,8 @@
 	const fontPresetDefinition = $derived(getCarouselFontPresetDefinition(fontPreset));
 	const textLetterSpacingCss = $derived(`${normalizeCarouselTextLetterSpacingEm(textLetterSpacingEm)}em`);
 	const quoteFontScaleCss = $derived(String(normalizeCarouselQuoteFontScale(quoteFontScale)));
+	const quoteTextOffsetXCss = $derived(`${normalizeCarouselQuoteTextOffsetPx(quoteTextOffsetXPx)}px`);
+	const quoteTextOffsetYCss = $derived(`${normalizeCarouselQuoteTextOffsetPx(quoteTextOffsetYPx)}px`);
 	const normalizedHandle = $derived(normalizeAccountHandle(accountHandle));
 	const accountNameLabel = $derived((accountDisplayName ?? '').trim() || 'Account');
 	const accountInitials = $derived(getInitials(accountDisplayName));
@@ -76,6 +84,8 @@
 	style:--carousel-font-body={fontPresetDefinition.bodyFont}
 	style:--carousel-text-letter-spacing={textLetterSpacingCss}
 	style:--carousel-quote-font-scale={quoteFontScaleCss}
+	style:--carousel-quote-offset-x={quoteTextOffsetXCss}
+	style:--carousel-quote-offset-y={quoteTextOffsetYCss}
 >
 	{#if isQuoteMode}
 		{#if backgroundUrl}
@@ -297,6 +307,7 @@
 		justify-items: start;
 		padding: 0 0.2rem 0.9rem;
 		text-align: left;
+		transform: translate(var(--carousel-quote-offset-x, 0px), var(--carousel-quote-offset-y, 0px));
 	}
 
 	.slide-preview-quote-copy h3 {

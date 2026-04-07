@@ -17,6 +17,10 @@ export const DEFAULT_CAROUSEL_QUOTE_FONT_SCALE = 1;
 export const CAROUSEL_QUOTE_FONT_SCALE_MIN = 0.55;
 export const CAROUSEL_QUOTE_FONT_SCALE_MAX = 1.8;
 export const CAROUSEL_QUOTE_FONT_SCALE_STEP = 0.05;
+export const DEFAULT_CAROUSEL_QUOTE_TEXT_OFFSET_PX = 0;
+export const CAROUSEL_QUOTE_TEXT_OFFSET_MIN_PX = -180;
+export const CAROUSEL_QUOTE_TEXT_OFFSET_MAX_PX = 180;
+export const CAROUSEL_QUOTE_TEXT_OFFSET_STEP_PX = 4;
 export const CAROUSEL_PROJECT_STATUSES = ['draft', 'ready', 'exported', 'archived'] as const satisfies readonly CarouselProjectStatus[];
 
 export const carouselStatusLabel: Record<CarouselProjectStatus, string> = {
@@ -143,6 +147,20 @@ export function normalizeCarouselQuoteFontScale(value: unknown): number {
 
 	const clamped = Math.min(CAROUSEL_QUOTE_FONT_SCALE_MAX, Math.max(CAROUSEL_QUOTE_FONT_SCALE_MIN, parsed));
 	return Math.round(clamped * 100) / 100;
+}
+
+export function normalizeCarouselQuoteTextOffsetPx(value: unknown): number {
+	const parsed =
+		typeof value === 'number'
+			? value
+			: typeof value === 'string' && value.trim()
+				? Number(value)
+				: DEFAULT_CAROUSEL_QUOTE_TEXT_OFFSET_PX;
+
+	if (!Number.isFinite(parsed)) return DEFAULT_CAROUSEL_QUOTE_TEXT_OFFSET_PX;
+
+	const clamped = Math.min(CAROUSEL_QUOTE_TEXT_OFFSET_MAX_PX, Math.max(CAROUSEL_QUOTE_TEXT_OFFSET_MIN_PX, parsed));
+	return Math.round(clamped);
 }
 
 export function normalizeHashtags(value: string[] | null | undefined): string[] {

@@ -1,6 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { supabase } from '$lib/supabase';
+import { normalizeCarouselQuoteFontScale, normalizeCarouselQuoteTextOffsetPx } from '$lib/carousel';
 import { getCarouselBundle, recomputeCarouselStatus } from '$lib/server/carousel-store';
 
 export const PATCH: RequestHandler = async ({ params, request }) => {
@@ -16,6 +17,16 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 			if (body[key] !== undefined) {
 				updates[key] = typeof body[key] === 'string' ? body[key].trim() || null : null;
 			}
+		}
+		if (body.quote_font_scale_override !== undefined) {
+			updates.quote_font_scale_override =
+				body.quote_font_scale_override === null ? null : normalizeCarouselQuoteFontScale(body.quote_font_scale_override);
+		}
+		if (body.quote_text_offset_x_px !== undefined) {
+			updates.quote_text_offset_x_px = normalizeCarouselQuoteTextOffsetPx(body.quote_text_offset_x_px);
+		}
+		if (body.quote_text_offset_y_px !== undefined) {
+			updates.quote_text_offset_y_px = normalizeCarouselQuoteTextOffsetPx(body.quote_text_offset_y_px);
 		}
 		if (body.layout_variant !== undefined) {
 			updates.layout_variant = body.layout_variant;

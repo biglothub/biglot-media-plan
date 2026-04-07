@@ -40,9 +40,12 @@ export const POST: RequestHandler = async ({ params }) => {
 				if (contentMode === 'quote' && slide.role !== 'cta') {
 					return {
 						...slide,
+						quote_font_scale_override: null,
+						quote_text_offset_x_px: 0,
+						quote_text_offset_y_px: 0,
 						candidate_assets_json: [],
-						selected_asset_json: null,
-						selected_asset_storage_path: null
+					selected_asset_json: null,
+					selected_asset_storage_path: null
 					};
 				}
 
@@ -70,6 +73,9 @@ export const POST: RequestHandler = async ({ params }) => {
 
 				return {
 					...slide,
+					quote_font_scale_override: null,
+					quote_text_offset_x_px: 0,
+					quote_text_offset_y_px: 0,
 					candidate_assets_json: candidateAssets,
 					selected_asset_json: selectedAssetJson,
 					selected_asset_storage_path: selectedAssetStoragePath
@@ -112,6 +118,9 @@ export const POST: RequestHandler = async ({ params }) => {
 				cta: slide.cta,
 				visual_brief: slide.visual_brief,
 				freepik_query: slide.freepik_query,
+				quote_font_scale_override: slide.quote_font_scale_override,
+				quote_text_offset_x_px: slide.quote_text_offset_x_px,
+				quote_text_offset_y_px: slide.quote_text_offset_y_px,
 				candidate_assets_json: slide.candidate_assets_json,
 				selected_asset_json: slide.selected_asset_json,
 				selected_asset_storage_path: slide.selected_asset_storage_path,

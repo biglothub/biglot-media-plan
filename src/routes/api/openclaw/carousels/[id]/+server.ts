@@ -65,6 +65,12 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		if (body.account_handle !== undefined) {
 			updates.account_handle = normalizeAccountHandle(body.account_handle);
 		}
+		if (body.account_avatar_url !== undefined) {
+			updates.account_avatar_url = normalizeTextOrNull(body.account_avatar_url);
+		}
+		if (body.account_avatar_storage_path !== undefined) {
+			updates.account_avatar_storage_path = normalizeTextOrNull(body.account_avatar_storage_path);
+		}
 		if (body.account_is_verified !== undefined) {
 			updates.account_is_verified = Boolean(body.account_is_verified);
 		}
@@ -90,6 +96,8 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 				'quote_font_scale',
 				'account_display_name',
 				'account_handle',
+				'account_avatar_url',
+				'account_avatar_storage_path',
 				'account_is_verified'
 			].filter(
 				(column) => column in pendingUpdates && isMissingCarouselProjectColumnError(error, column)

@@ -4,6 +4,9 @@
 	import { Badge, Button, PageHeader, Spinner, toast } from '$lib';
 	import CarouselSlidePreview from '$lib/components/domain/CarouselSlidePreview.svelte';
 	import {
+		CAROUSEL_QUOTE_TEXT_OFFSET_MAX_PX,
+		CAROUSEL_QUOTE_TEXT_OFFSET_MIN_PX,
+		CAROUSEL_QUOTE_TEXT_OFFSET_STEP_PX,
 		CAROUSEL_FONT_PRESETS,
 		CAROUSEL_QUOTE_FONT_SCALE_MAX,
 		CAROUSEL_QUOTE_FONT_SCALE_MIN,
@@ -21,6 +24,7 @@
 		INSTAGRAM_CAROUSEL_HEIGHT,
 		INSTAGRAM_CAROUSEL_WIDTH,
 		normalizeCarouselQuoteFontScale,
+		normalizeCarouselQuoteTextOffsetPx,
 		normalizeCarouselTextLetterSpacingEm,
 		normalizeHashtags,
 		carouselStatusLabel
@@ -30,12 +34,32 @@
 	import type {
 		CarouselAsset,
 		CarouselContentMode,
+		CarouselQuoteIdentityRow,
 		CarouselProjectRow,
 		CarouselProjectStatus,
 		CarouselSlideRow
 	} from '$lib/types';
 
 	type ProjectResponse = CarouselProjectRow & { carousel_slides?: CarouselSlideRow[] };
+	type CarouselExportMode = 'full_package' | 'slides_only' | 'copy_bundle';
+
+	const EXPORT_MODE_OPTIONS: Array<{ value: CarouselExportMode; label: string; description: string }> = [
+		{
+			value: 'full_package',
+			label: 'Full Package',
+			description: 'PNG slides + caption + hashtags + manifest + checklist'
+		},
+		{
+			value: 'slides_only',
+			label: 'Slides Only',
+			description: 'Export only PNG slides as a zip'
+		},
+		{
+			value: 'copy_bundle',
+			label: 'Copy Only',
+			description: 'Export caption, hashtags, and posting checklist only'
+		}
+	];
 
 	let project = $state<CarouselProjectRow | null>(null);
 	let slides = $state<CarouselSlideRow[]>([]);
@@ -52,6 +76,14 @@
 	let uploadingAssetSlideId = $state<string | null>(null);
 	let projectError = $state('');
 	let hashtagsInput = $state('');
+	let exportMode = $state<CarouselExportMode>('full_package');
+	let quoteIdentities = $state<CarouselQuoteIdentityRow[]>([]);
+	let loadingQuoteIdentities = $state(false);
+	let savingQuoteIdentity = $state(false);
+	let applyingQuoteIdentityId = $state<string | null>(null);
+	let deletingQuoteIdentityId = $state<string | null>(null);
+	let selectedQuoteIdentityId = $state('');
+	let quoteIdentityName = $state('');
 
 	const projectId = $derived(page.params.id);
 	const contentMode = $derived(project?.content_mode ?? 'standard');
@@ -60,6 +92,8 @@
 	const projectBlockers = $derived(getCarouselProjectBlockers(project, slides));
 	const readyToExport = $derived(computedStatus === 'ready' || project?.status === 'exported');
 	const readySlidesCount = $derived(slides.filter((slide) => getCarouselSlideReadiness(slide, contentMode).isReady).length);
+	const selectedExportMode = $derived(EXPORT_MODE_OPTIONS.find((option) => option.value === exportMode) ?? EXPORT_MODE_OPTIONS[0]);
+	const canExportSelectedMode = $derived(exportMode === 'copy_bundle' ? Boolean(project) : readyToExport);
 
 	function statusVariant(status: CarouselProjectStatus | undefined): 'warning' | 'success' | 'info' | 'neutral' {
 		if (status === 'ready') return 'success';
@@ -94,6 +128,12 @@
 				cta: slide.cta ?? '',
 				visual_brief: slide.visual_brief ?? '',
 				freepik_query: slide.freepik_query ?? '',
+				quote_font_scale_override:
+					slide.quote_font_scale_override === null || slide.quote_font_scale_override === undefined
+						? null
+						: normalizeCarouselQuoteFontScale(slide.quote_font_scale_override),
+				quote_text_offset_x_px: normalizeCarouselQuoteTextOffsetPx(slide.quote_text_offset_x_px),
+				quote_text_offset_y_px: normalizeCarouselQuoteTextOffsetPx(slide.quote_text_offset_y_px),
 				candidate_assets_json: slide.candidate_assets_json ?? []
 			}))
 			.sort((a, b) => a.position - b.position);
@@ -118,6 +158,20 @@
 
 	function slideReadiness(slide: CarouselSlideRow) {
 		return getCarouselSlideReadiness(slide, contentMode);
+	}
+
+	function resolvedSlideQuoteFontScale(slide: CarouselSlideRow): number {
+		return normalizeCarouselQuoteFontScale(
+			slide.quote_font_scale_override ?? project?.quote_font_scale ?? DEFAULT_CAROUSEL_QUOTE_FONT_SCALE
+		);
+	}
+
+	function updateSlideQuoteFontScale(slide: CarouselSlideRow, value: unknown) {
+		slide.quote_font_scale_override = normalizeCarouselQuoteFontScale(value);
+	}
+
+	function clearSlideQuoteFontScale(slide: CarouselSlideRow) {
+		slide.quote_font_scale_override = null;
 	}
 
 	const selectedFontPreset = $derived(getCarouselFontPresetDefinition(project?.font_preset ?? 'biglot'));
@@ -156,6 +210,133 @@
 
 	function isQuoteNonCtaSlide(slide: CarouselSlideRow): boolean {
 		return project?.content_mode === 'quote' && slide.role !== 'cta';
+	}
+
+	async function loadQuoteIdentities() {
+		loadingQuoteIdentities = true;
+		try {
+			const response = await fetch('/api/openclaw/carousels/quote-identities');
+			const body = await response.json();
+			if (!response.ok) {
+				toast.error(body.error ?? 'โหลด Quote identities ไม่สำเร็จ');
+				return;
+			}
+
+			quoteIdentities = Array.isArray(body.identities) ? body.identities : [];
+			if (!selectedQuoteIdentityId && quoteIdentities.length > 0) {
+				selectedQuoteIdentityId = quoteIdentities[0].id;
+			}
+		} catch {
+			toast.error('โหลด Quote identities ไม่สำเร็จ');
+		} finally {
+			loadingQuoteIdentities = false;
+		}
+	}
+
+	async function saveCurrentQuoteIdentity() {
+		if (!project) return;
+		const accountDisplayName = project.account_display_name?.trim() ?? '';
+		if (!accountDisplayName) {
+			toast.error('ใส่ Account display name ก่อนบันทึก Quote identity');
+			return;
+		}
+
+		savingQuoteIdentity = true;
+		try {
+			const response = await fetch('/api/openclaw/carousels/quote-identities', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					name: quoteIdentityName.trim() || accountDisplayName,
+					account_display_name: accountDisplayName,
+					account_handle: project.account_handle,
+					account_avatar_url: project.account_avatar_url,
+					account_avatar_storage_path: project.account_avatar_storage_path,
+					account_is_verified: project.account_is_verified
+				})
+			});
+			const body = await response.json();
+			if (!response.ok) {
+				toast.error(body.error ?? 'บันทึก Quote identity ไม่สำเร็จ');
+				return;
+			}
+
+			quoteIdentityName = '';
+			await loadQuoteIdentities();
+			if (body.identity?.id) {
+				selectedQuoteIdentityId = body.identity.id;
+			}
+			toast.success('บันทึก Quote identity แล้ว');
+		} catch {
+			toast.error('บันทึก Quote identity ไม่สำเร็จ');
+		} finally {
+			savingQuoteIdentity = false;
+		}
+	}
+
+	async function applySelectedQuoteIdentity() {
+		if (!project) return;
+		const identity = quoteIdentities.find((item) => item.id === selectedQuoteIdentityId);
+		if (!identity) {
+			toast.error('เลือก Quote identity ก่อน');
+			return;
+		}
+
+		applyingQuoteIdentityId = identity.id;
+		try {
+			const response = await fetch(`/api/openclaw/carousels/${projectId}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					account_display_name: identity.account_display_name,
+					account_handle: identity.account_handle,
+					account_avatar_url: identity.account_avatar_url,
+					account_avatar_storage_path: identity.account_avatar_storage_path,
+					account_is_verified: identity.account_is_verified
+				})
+			});
+			const body = await response.json();
+			if (!response.ok) {
+				toast.error(body.error ?? 'ใช้ Quote identity ไม่สำเร็จ');
+				return;
+			}
+
+			normalizeProjectResponse(body as ProjectResponse);
+			toast.success('ใช้ Quote identity แล้ว');
+		} catch {
+			toast.error('ใช้ Quote identity ไม่สำเร็จ');
+		} finally {
+			applyingQuoteIdentityId = null;
+		}
+	}
+
+	async function deleteSelectedQuoteIdentity() {
+		if (!selectedQuoteIdentityId) return;
+		const identity = quoteIdentities.find((item) => item.id === selectedQuoteIdentityId);
+		if (!identity) return;
+
+		const confirmed = window.confirm(`ลบ Quote identity "${identity.name}" ใช่ไหม?`);
+		if (!confirmed) return;
+
+		deletingQuoteIdentityId = identity.id;
+		try {
+			const response = await fetch(`/api/openclaw/carousels/quote-identities/${identity.id}`, {
+				method: 'DELETE'
+			});
+			if (!response.ok) {
+				const body = await response.json().catch(() => ({}));
+				toast.error(body.error ?? 'ลบ Quote identity ไม่สำเร็จ');
+				return;
+			}
+
+			await loadQuoteIdentities();
+			selectedQuoteIdentityId = quoteIdentities[0]?.id ?? '';
+			toast.success('ลบ Quote identity แล้ว');
+		} catch {
+			toast.error('ลบ Quote identity ไม่สำเร็จ');
+		} finally {
+			deletingQuoteIdentityId = null;
+		}
 	}
 
 	async function loadProject() {
@@ -304,6 +485,9 @@
 					cta: slide.cta,
 					visual_brief: slide.visual_brief,
 					freepik_query: slide.freepik_query,
+					quote_font_scale_override: slide.quote_font_scale_override,
+					quote_text_offset_x_px: slide.quote_text_offset_x_px,
+					quote_text_offset_y_px: slide.quote_text_offset_y_px,
 					layout_variant: slide.layout_variant
 				})
 			});
@@ -472,17 +656,18 @@
 
 	async function exportPackage() {
 		if (!project) return;
-		if (!readyToExport) {
+		if (exportMode !== 'copy_bundle' && !readyToExport) {
 			toast.error(projectBlockers[0] ?? 'ยัง export ไม่ได้');
 			return;
 		}
 
 		exporting = true;
 		try {
-			const [{ toBlob }, { default: JSZip }] = await Promise.all([
-				import('html-to-image'),
-				import('jszip')
+			const [{ default: JSZip }, htmlToImageModule] = await Promise.all([
+				import('jszip'),
+				exportMode === 'copy_bundle' ? Promise.resolve(null) : import('html-to-image')
 			]);
+			const toBlob = htmlToImageModule?.toBlob;
 
 			const exportProject = {
 				...project,
@@ -491,38 +676,50 @@
 
 			const zip = new JSZip();
 			const entries = buildCarouselExportEntries(slides);
-			for (const entry of entries) {
-				const node = document.querySelector<HTMLElement>(`[data-export-slide-id="${entry.slideId}"]`);
-				if (!node) {
-					throw new Error(`Missing DOM node for slide ${entry.position}`);
+
+			if (exportMode === 'full_package' || exportMode === 'slides_only') {
+				if (!toBlob) {
+					throw new Error('Export image renderer is not available');
 				}
 
-				const blob = await toBlob(node, {
-					backgroundColor: '#0f172a',
-					canvasWidth: INSTAGRAM_CAROUSEL_WIDTH,
-					canvasHeight: INSTAGRAM_CAROUSEL_HEIGHT,
-					pixelRatio: 1,
-					cacheBust: true,
-					skipFonts: true
-				});
+				for (const entry of entries) {
+					const node = document.querySelector<HTMLElement>(`[data-export-slide-id="${entry.slideId}"]`);
+					if (!node) {
+						throw new Error(`Missing DOM node for slide ${entry.position}`);
+					}
 
-				if (!blob) {
-					throw new Error(`Failed to export slide ${entry.position}`);
+					const blob = await toBlob(node, {
+						backgroundColor: '#0f172a',
+						canvasWidth: INSTAGRAM_CAROUSEL_WIDTH,
+						canvasHeight: INSTAGRAM_CAROUSEL_HEIGHT,
+						pixelRatio: 1,
+						cacheBust: true,
+						skipFonts: true
+					});
+
+					if (!blob) {
+						throw new Error(`Failed to export slide ${entry.position}`);
+					}
+					zip.file(entry.filename, blob);
 				}
-				zip.file(entry.filename, blob);
 			}
 
 			const exportedAt = new Date().toISOString();
-			zip.file('caption.txt', exportProject.caption ?? '');
-			zip.file('hashtags.txt', exportProject.hashtags_json.join(' '));
-			zip.file('manifest.json', JSON.stringify(buildCarouselExportManifest(exportProject, slides, exportedAt), null, 2));
-			zip.file('posting-checklist.txt', buildPostingChecklist(exportProject, slides));
+			if (exportMode === 'full_package' || exportMode === 'copy_bundle') {
+				zip.file('caption.txt', exportProject.caption ?? '');
+				zip.file('hashtags.txt', exportProject.hashtags_json.join(' '));
+				zip.file('posting-checklist.txt', buildPostingChecklist(exportProject, slides));
+			}
+			if (exportMode === 'full_package') {
+				zip.file('manifest.json', JSON.stringify(buildCarouselExportManifest(exportProject, slides, exportedAt), null, 2));
+			}
 
 			const blob = await zip.generateAsync({ type: 'blob' });
 			const url = URL.createObjectURL(blob);
 			const link = document.createElement('a');
 			link.href = url;
-			link.download = `carousel-${project.id.slice(0, 8)}.zip`;
+			const suffix = exportMode === 'slides_only' ? 'slides' : exportMode === 'copy_bundle' ? 'copy' : 'package';
+			link.download = `carousel-${project.id.slice(0, 8)}-${suffix}.zip`;
 			document.body.appendChild(link);
 			link.click();
 			link.remove();
@@ -541,16 +738,16 @@
 				normalizeProjectResponse(body as ProjectResponse);
 			}
 
-			toast.success('Export package พร้อมดาวน์โหลดแล้ว');
+			toast.success(`${selectedExportMode.label} พร้อมดาวน์โหลดแล้ว`);
 		} catch (error) {
-			toast.error(error instanceof Error ? error.message : 'Export package ไม่สำเร็จ');
+			toast.error(error instanceof Error ? error.message : 'Export ไม่สำเร็จ');
 		} finally {
 			exporting = false;
 		}
 	}
 
 	onMount(async () => {
-		await loadProject();
+		await Promise.all([loadProject(), loadQuoteIdentities()]);
 	});
 </script>
 
@@ -569,8 +766,16 @@
 			<Button variant="ai" onclick={generateDraft} loading={generating} disabled={!hasSupabaseConfig}>
 				{generating ? 'Generating...' : slides.length > 0 ? 'Regenerate Draft' : 'Generate Draft'}
 			</Button>
-			<Button variant="primary" onclick={exportPackage} loading={exporting} disabled={!readyToExport}>
-				{exporting ? 'Exporting...' : 'Export Package'}
+			<label class="export-mode-picker">
+				<span>Export mode</span>
+				<select bind:value={exportMode}>
+					{#each EXPORT_MODE_OPTIONS as option}
+						<option value={option.value}>{option.label}</option>
+					{/each}
+				</select>
+			</label>
+			<Button variant="primary" onclick={exportPackage} loading={exporting} disabled={!canExportSelectedMode}>
+				{exporting ? 'Exporting...' : `Export ${selectedExportMode.label}`}
 			</Button>
 		{/snippet}
 	</PageHeader>
@@ -779,6 +984,63 @@
 							<span class="account-panel-note">Shown on every non-CTA slide</span>
 						</div>
 
+						<div class="quote-identity-presets">
+							<label>
+								<span>Saved identities</span>
+								<select bind:value={selectedQuoteIdentityId} disabled={loadingQuoteIdentities || quoteIdentities.length === 0}>
+									<option value="">Select saved identity</option>
+									{#each quoteIdentities as identity}
+										<option value={identity.id}>
+											{identity.name}{identity.account_handle ? ` · @${identity.account_handle}` : ''}
+										</option>
+									{/each}
+								</select>
+								<small>
+									{#if loadingQuoteIdentities}
+										Loading saved identities...
+									{:else if quoteIdentities.length === 0}
+										ยังไม่มี saved identity
+									{:else}
+										เลือก preset ที่เคยบันทึกไว้แล้ว apply เข้า project นี้ได้ทันที
+									{/if}
+								</small>
+							</label>
+
+							<div class="quote-identity-actions">
+								<Button
+									variant="secondary"
+									size="sm"
+									onclick={applySelectedQuoteIdentity}
+									disabled={!selectedQuoteIdentityId || applyingQuoteIdentityId !== null}
+								>
+									{applyingQuoteIdentityId ? 'Applying...' : 'Apply Saved Identity'}
+								</Button>
+								<Button
+									variant="ghost"
+									size="sm"
+									onclick={deleteSelectedQuoteIdentity}
+									disabled={!selectedQuoteIdentityId || deletingQuoteIdentityId !== null}
+								>
+									{deletingQuoteIdentityId ? 'Deleting...' : 'Delete Saved Identity'}
+								</Button>
+							</div>
+
+							<div class="quote-identity-save">
+								<label>
+									<span>Save current as</span>
+									<input bind:value={quoteIdentityName} placeholder="เช่น BigLot Trader Verified" />
+								</label>
+								<Button
+									variant="secondary"
+									size="sm"
+									onclick={saveCurrentQuoteIdentity}
+									loading={savingQuoteIdentity}
+								>
+									{savingQuoteIdentity ? 'Saving...' : 'Save Current Identity'}
+								</Button>
+							</div>
+						</div>
+
 						<div class="account-card">
 							<div class="account-avatar">
 								{#if project.account_avatar_url}
@@ -893,11 +1155,13 @@
 									textLetterSpacingEm={project.text_letter_spacing_em}
 									fallbackAssetUrl={previewAssetForSlide(slide)}
 									contentMode={contentMode}
-									quoteFontScale={project.quote_font_scale}
+									quoteFontScale={resolvedSlideQuoteFontScale(slide)}
 									accountDisplayName={project.account_display_name}
 									accountHandle={project.account_handle}
 									accountAvatarUrl={project.account_avatar_url}
 									accountIsVerified={project.account_is_verified}
+									quoteTextOffsetXPx={slide.quote_text_offset_x_px}
+									quoteTextOffsetYPx={slide.quote_text_offset_y_px}
 									exportId={slide.id}
 								/>
 							</div>
@@ -952,6 +1216,102 @@
 									<div class="quote-mode-note">
 										<strong>Quote Mode</strong>
 										<span>สไลด์นี้จะใช้ headline เป็นข้อความหลัก ไม่ต้องมี body copy หรือ layout selector แต่เลือก background image เพิ่มได้ถ้าต้องการ</span>
+									</div>
+
+									<div class="quote-position-grid">
+										<label>
+											<span>Slide font size</span>
+											<div class="letter-spacing-field">
+												<input
+													type="range"
+													min={CAROUSEL_QUOTE_FONT_SCALE_MIN}
+													max={CAROUSEL_QUOTE_FONT_SCALE_MAX}
+													step={CAROUSEL_QUOTE_FONT_SCALE_STEP}
+													value={resolvedSlideQuoteFontScale(slide)}
+													oninput={(event) => {
+														updateSlideQuoteFontScale(slide, (event.currentTarget as HTMLInputElement).value);
+													}}
+												/>
+												<div class="letter-spacing-input">
+													<input
+														type="number"
+														min={CAROUSEL_QUOTE_FONT_SCALE_MIN}
+														max={CAROUSEL_QUOTE_FONT_SCALE_MAX}
+														step={CAROUSEL_QUOTE_FONT_SCALE_STEP}
+														value={resolvedSlideQuoteFontScale(slide)}
+														oninput={(event) => {
+															updateSlideQuoteFontScale(slide, (event.currentTarget as HTMLInputElement).value);
+														}}
+													/>
+													<span>x</span>
+												</div>
+											</div>
+											<small>
+												{#if slide.quote_font_scale_override === null}
+													Using project default: {selectedQuoteFontScaleLabel}
+												{:else}
+													Override for this slide: {resolvedSlideQuoteFontScale(slide).toFixed(2)}x
+												{/if}
+											</small>
+										</label>
+
+										<label>
+											<span>Quote X position</span>
+											<div class="letter-spacing-field">
+												<input
+													type="range"
+													min={CAROUSEL_QUOTE_TEXT_OFFSET_MIN_PX}
+													max={CAROUSEL_QUOTE_TEXT_OFFSET_MAX_PX}
+													step={CAROUSEL_QUOTE_TEXT_OFFSET_STEP_PX}
+													bind:value={slide.quote_text_offset_x_px}
+												/>
+												<div class="letter-spacing-input">
+													<input
+														type="number"
+														min={CAROUSEL_QUOTE_TEXT_OFFSET_MIN_PX}
+														max={CAROUSEL_QUOTE_TEXT_OFFSET_MAX_PX}
+														step={CAROUSEL_QUOTE_TEXT_OFFSET_STEP_PX}
+														bind:value={slide.quote_text_offset_x_px}
+													/>
+													<span>px</span>
+												</div>
+											</div>
+										</label>
+
+										<label>
+											<span>Quote Y position</span>
+											<div class="letter-spacing-field">
+												<input
+													type="range"
+													min={CAROUSEL_QUOTE_TEXT_OFFSET_MIN_PX}
+													max={CAROUSEL_QUOTE_TEXT_OFFSET_MAX_PX}
+													step={CAROUSEL_QUOTE_TEXT_OFFSET_STEP_PX}
+													bind:value={slide.quote_text_offset_y_px}
+												/>
+												<div class="letter-spacing-input">
+													<input
+														type="number"
+														min={CAROUSEL_QUOTE_TEXT_OFFSET_MIN_PX}
+														max={CAROUSEL_QUOTE_TEXT_OFFSET_MAX_PX}
+														step={CAROUSEL_QUOTE_TEXT_OFFSET_STEP_PX}
+														bind:value={slide.quote_text_offset_y_px}
+													/>
+													<span>px</span>
+												</div>
+											</div>
+										</label>
+									</div>
+									<div class="quote-position-actions">
+										<Button
+											variant="ghost"
+											size="sm"
+											onclick={() => {
+												clearSlideQuoteFontScale(slide);
+											}}
+											disabled={slide.quote_font_scale_override === null}
+										>
+											Use Project Font Size
+										</Button>
 									</div>
 								{/if}
 
@@ -1255,6 +1615,19 @@
 		gap: 0.45rem;
 	}
 
+	.export-mode-picker {
+		min-width: 220px;
+	}
+
+	.export-mode-picker span {
+		display: block;
+		font-size: 0.72rem;
+		font-weight: 800;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		color: var(--color-slate-500);
+	}
+
 	small {
 		font-size: 0.74rem;
 		line-height: 1.5;
@@ -1329,6 +1702,27 @@
 		font-size: 0.74rem;
 		line-height: 1.35;
 		color: var(--color-slate-500);
+	}
+
+	.quote-identity-presets {
+		display: grid;
+		gap: var(--space-3);
+		padding: var(--space-4);
+		border-radius: 1rem;
+		background: rgba(255, 255, 255, 0.86);
+		border: 1px solid rgba(148, 163, 184, 0.18);
+	}
+
+	.quote-identity-actions,
+	.quote-identity-save {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+		align-items: end;
+	}
+
+	.quote-identity-save label {
+		flex: 1 1 260px;
 	}
 
 	.account-card {
@@ -1566,6 +1960,17 @@
 		font-size: 0.75rem;
 		line-height: 1.5;
 		color: var(--color-slate-600);
+	}
+
+	.quote-position-grid {
+		display: grid;
+		gap: var(--space-3);
+	}
+
+	.quote-position-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
 	}
 
 	.field-grid--query {

@@ -151,6 +151,9 @@ export interface CarouselSlideRow {
 	cta: string | null;
 	visual_brief: string | null;
 	freepik_query: string | null;
+	quote_font_scale_override: number | null;
+	quote_text_offset_x_px: number;
+	quote_text_offset_y_px: number;
 	candidate_assets_json: CarouselAsset[] | null;
 	selected_asset_json: CarouselAsset | null;
 	selected_asset_storage_path: string | null;
@@ -183,4 +186,16 @@ export interface CarouselProjectRow {
 	updated_at: string;
 	idea_backlog?: IdeaBacklogRow | null;
 	carousel_slides?: CarouselSlideRow[];
+}
+
+export interface CarouselQuoteIdentityRow {
+	id: string;
+	name: string;
+	account_display_name: string;
+	account_handle: string | null;
+	account_avatar_url: string | null;
+	account_avatar_storage_path: string | null;
+	account_is_verified: boolean;
+	created_at: string;
+	updated_at: string;
 }
