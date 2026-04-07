@@ -288,7 +288,7 @@ CREATE TABLE IF NOT EXISTS public.carousel_projects (
   font_preset       text NOT NULL DEFAULT 'biglot'
     CHECK (font_preset IN ('biglot', 'apple_clean', 'mitr_friendly', 'ibm_plex_thai', 'editorial_serif')),
   quote_font_scale  numeric(4, 2) NOT NULL DEFAULT 1
-    CHECK (quote_font_scale >= 0.8 AND quote_font_scale <= 1.3),
+    CHECK (quote_font_scale >= 0.55 AND quote_font_scale <= 1.8),
   title             text,
   visual_direction  text,
   caption           text,

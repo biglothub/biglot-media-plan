@@ -14,8 +14,8 @@ export const CAROUSEL_TEXT_LETTER_SPACING_MIN_EM = -0.08;
 export const CAROUSEL_TEXT_LETTER_SPACING_MAX_EM = 0.24;
 export const CAROUSEL_TEXT_LETTER_SPACING_STEP_EM = 0.01;
 export const DEFAULT_CAROUSEL_QUOTE_FONT_SCALE = 1;
-export const CAROUSEL_QUOTE_FONT_SCALE_MIN = 0.8;
-export const CAROUSEL_QUOTE_FONT_SCALE_MAX = 1.3;
+export const CAROUSEL_QUOTE_FONT_SCALE_MIN = 0.55;
+export const CAROUSEL_QUOTE_FONT_SCALE_MAX = 1.8;
 export const CAROUSEL_QUOTE_FONT_SCALE_STEP = 0.05;
 export const CAROUSEL_PROJECT_STATUSES = ['draft', 'ready', 'exported', 'archived'] as const satisfies readonly CarouselProjectStatus[];
 

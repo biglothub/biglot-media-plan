@@ -78,6 +78,10 @@
 	style:--carousel-quote-font-scale={quoteFontScaleCss}
 >
 	{#if isQuoteMode}
+		{#if backgroundUrl}
+			<div class="slide-preview-bg slide-preview-bg--quote" style:background-image={`url("${backgroundUrl}")`}></div>
+			<div class="slide-preview-quote-overlay"></div>
+		{/if}
 		<div class="slide-preview-quote">
 			<header class="slide-preview-account">
 				<div class="slide-preview-avatar">
@@ -184,6 +188,21 @@
 		display: grid;
 		grid-template-rows: auto 1fr;
 		gap: 1.8rem;
+	}
+
+	.slide-preview-bg--quote {
+		filter: saturate(0.9) contrast(0.96) brightness(0.7);
+		transform: scale(1.04);
+	}
+
+	.slide-preview-quote-overlay {
+		position: absolute;
+		inset: 0;
+		background:
+			linear-gradient(180deg, rgba(8, 8, 8, 0.28), rgba(8, 8, 8, 0.72)),
+			radial-gradient(circle at top left, rgba(255, 255, 255, 0.08), transparent 30%),
+			linear-gradient(180deg, rgba(17, 17, 17, 0.42), rgba(17, 17, 17, 0.18));
+		z-index: 0;
 	}
 
 	.slide-preview-account {

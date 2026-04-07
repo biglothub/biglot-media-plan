@@ -20,17 +20,6 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			return json({ error: slideError.message }, { status: 404 });
 		}
 
-		const { data: project } = await supabase
-			.from('carousel_projects')
-			.select('content_mode')
-			.eq('id', params.id)
-			.maybeSingle();
-
-		const contentMode = project?.content_mode === 'quote' ? 'quote' : 'standard';
-		if (contentMode === 'quote' && slide.role !== 'cta') {
-			return json({ slide, skipped: true });
-		}
-
 		if (!hasPexelsConfig) return json({ error: 'PEXELS_API_KEY is required' }, { status: 500 });
 		if (!query) {
 			return json({ error: 'query is required' }, { status: 400 });
