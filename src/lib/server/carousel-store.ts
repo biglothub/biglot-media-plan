@@ -110,6 +110,7 @@ function normalizeCarouselSlide(row: JsonRecord): CarouselSlideRow {
 				? (row.selected_asset_json as CarouselAsset)
 				: null,
 		selected_asset_storage_path: typeof row.selected_asset_storage_path === 'string' ? row.selected_asset_storage_path : null,
+		history_json: Array.isArray(row.history_json) ? (row.history_json as CarouselSlideRow['history_json']) : [],
 		created_at: row.created_at as string,
 		updated_at: row.updated_at as string
 	};
@@ -130,6 +131,8 @@ function normalizeProductionCalendar(row: JsonRecord): ProductionCalendarRow {
 				? row.approval_status
 				: 'draft',
 		submitted_at: typeof row.submitted_at === 'string' ? row.submitted_at : null,
+		draft_video_url: normalizeTextOrNull(row.draft_video_url),
+		review_notes: normalizeTextOrNull(row.review_notes),
 		notes: normalizeTextOrNull(row.notes),
 		created_at: row.created_at as string,
 		idea_backlog: normalizeRelation<IdeaBacklogRow>(row.idea_backlog),
@@ -187,6 +190,7 @@ function normalizeCarouselProject(row: JsonRecord): CarouselProjectRow {
 		slide_count: Number(row.slide_count ?? 0),
 		last_generated_at: typeof row.last_generated_at === 'string' ? row.last_generated_at : null,
 		last_exported_at: typeof row.last_exported_at === 'string' ? row.last_exported_at : null,
+		cover_thumbnail_url: extractCoverThumbnailUrl(row.carousel_slides),
 		created_at: row.created_at as string,
 		updated_at: row.updated_at as string,
 		idea_backlog: normalizeRelation<IdeaBacklogRow>(row.idea_backlog),
@@ -195,12 +199,22 @@ function normalizeCarouselProject(row: JsonRecord): CarouselProjectRow {
 	};
 }
 
+function extractCoverThumbnailUrl(slides: unknown): string | null {
+	if (!Array.isArray(slides) || slides.length === 0) return null;
+	const sorted = [...slides].sort((a: JsonRecord, b: JsonRecord) => Number(a.position ?? 0) - Number(b.position ?? 0));
+	const first = sorted[0] as JsonRecord;
+	const selected = first?.selected_asset_json as JsonRecord | null;
+	if (selected?.storage_url) return selected.storage_url as string;
+	const candidates = first?.candidate_assets_json as JsonRecord[] | null;
+	return candidates?.[0]?.preview_url as string ?? null;
+}
+
 export async function listCarouselProjects(): Promise<CarouselProjectRow[]> {
 	if (!supabase) throw new Error('Supabase not configured');
 
 	const { data, error } = await supabase
 		.from('carousel_projects')
-		.select('*, idea_backlog(*)')
+		.select('*, idea_backlog(*), carousel_slides(position, selected_asset_json, candidate_assets_json)')
 		.order('updated_at', { ascending: false });
 
 	if (error) throw new Error(error.message);

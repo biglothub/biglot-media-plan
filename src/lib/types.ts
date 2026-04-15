@@ -99,6 +99,8 @@ export interface ProductionCalendarRow {
 	revision_count: number;
 	approval_status: ApprovalStatus;
 	submitted_at: string | null;
+	draft_video_url: string | null;
+	review_notes: string | null;
 	notes: string | null;
 	created_at: string;
 	idea_backlog?: IdeaBacklogRow | null;
@@ -148,6 +150,15 @@ export interface CarouselAsset {
 	storage_url?: string | null;
 }
 
+export interface CarouselSlideHistoryEntry {
+	saved_at: string;
+	headline: string | null;
+	body: string | null;
+	cta: string | null;
+	visual_brief: string | null;
+	freepik_query: string | null;
+}
+
 export interface CarouselSlideRow {
 	id: string;
 	project_id: string;
@@ -165,6 +176,7 @@ export interface CarouselSlideRow {
 	candidate_assets_json: CarouselAsset[] | null;
 	selected_asset_json: CarouselAsset | null;
 	selected_asset_storage_path: string | null;
+	history_json: CarouselSlideHistoryEntry[];
 	created_at: string;
 	updated_at: string;
 }
@@ -194,12 +206,31 @@ export interface CarouselProjectRow {
 	slide_count: number;
 	last_generated_at: string | null;
 	last_exported_at: string | null;
+	cover_thumbnail_url?: string | null;
 	created_at: string;
 	updated_at: string;
 	idea_backlog?: IdeaBacklogRow | null;
 	carousel_slides?: CarouselSlideRow[];
 	linked_schedule?: ProductionCalendarRow | null;
 	published_record?: ProducedVideoRow | null;
+}
+
+export type ApprovalSubmissionStatus = 'pending' | 'approved' | 'changes_requested';
+export type ApprovalSubmissionPlatform = 'youtube' | 'facebook' | 'instagram' | 'tiktok' | 'other';
+
+export interface ApprovalSubmissionRow {
+	id: string;
+	title: string;
+	platform: ApprovalSubmissionPlatform;
+	drive_url: string;
+	submitted_by: string;
+	notes: string | null;
+	status: ApprovalSubmissionStatus;
+	reviewer_notes: string | null;
+	reviewed_by: string | null;
+	reviewed_at: string | null;
+	created_at: string;
+	updated_at: string;
 }
 
 export interface CarouselQuoteIdentityRow {

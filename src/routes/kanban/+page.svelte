@@ -19,6 +19,9 @@
 		platformLabel,
 		formatCount,
 		formatCalendarDate,
+		getMonthStartIso,
+		addMonthsIso,
+		formatMonthLabel,
 		contentTypeLabel,
 		contentCategoryLabel,
 		getYouTubeEmbedUrl,
@@ -33,6 +36,9 @@
 	let loading = $state(false);
 	let isTouchUi = $state(false);
 	let mobileStage = $state<ProductionStage>('planned');
+	let currentMonthStart = $state('');
+	let currentMonthEnd = $state('');
+	let currentMonthLabel = $state('');
 
 	// ── Drag ────────────────────────────────────────────────────────────────
 	let draggingItemId = $state<string | null>(null);
@@ -138,12 +144,20 @@
 	// ── Data loading ─────────────────────────────────────────────────────────
 	async function loadCalendar() {
 		if (!supabase) return;
+		if (!currentMonthStart || !currentMonthEnd) {
+			const monthStart = getMonthStartIso(new Date());
+			currentMonthStart = monthStart;
+			currentMonthEnd = addMonthsIso(monthStart, 1);
+			currentMonthLabel = formatMonthLabel(monthStart);
+		}
 		loading = true;
 		const { data, error } = await supabase
 			.from('production_calendar')
 			.select(
-				'id, backlog_id, carousel_project_id, handoff_source, shoot_date, publish_deadline, status, revision_count, approval_status, submitted_at, notes, created_at, idea_backlog(*), calendar_assignments(*)'
+				'id, backlog_id, carousel_project_id, handoff_source, shoot_date, publish_deadline, status, revision_count, approval_status, submitted_at, draft_video_url, review_notes, notes, created_at, idea_backlog(*), calendar_assignments(*)'
 			)
+			.gte('shoot_date', currentMonthStart)
+			.lt('shoot_date', currentMonthEnd)
 			.order('shoot_date', { ascending: true })
 			.order('created_at', { ascending: true });
 		loading = false;
@@ -368,6 +382,7 @@
 		<p class="kicker">Production</p>
 		<h1>Kanban Board</h1>
 		<p>{isTouchUi ? 'เลือก stage แล้วอัปเดตสถานะจากการ์ดโดยตรง' : 'ลากการ์ดข้ามคอลัมน์เพื่ออัปเดตสถานะการผลิตคอนเทนต์'}</p>
+		<p class="month-scope">แสดงเฉพาะรายการของ {currentMonthLabel || 'เดือนปัจจุบัน'}</p>
 	</section>
 
 	{#if !hasSupabaseConfig}
@@ -642,6 +657,7 @@
 	.hero { text-align: center; padding: 1.2rem 0 0.2rem; }
 	.hero h1 { margin: 0.4rem 0; font-size: clamp(1.8rem, 4.4vw, 2.7rem); }
 	.hero p { margin: 0; color: var(--color-slate-600); }
+	.month-scope { margin-top: 0.35rem; font-size: 0.9rem; color: var(--color-slate-500); }
 
 	.kicker {
 		margin: 0; font-size: 0.78rem; text-transform: uppercase;
